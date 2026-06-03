@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-const ringBufCapacity uint64 = 1024
+const defaultRingBufCapacity uint64 = 1024
 
 // ProcessFunc defines the function signature for processing messages
 // T can be any type: []byte, string, struct, etc.
@@ -66,7 +66,7 @@ type RingSPSC[T any] struct {
 func NewRingSPSC[T any](cfg RingSPSCConfig[T]) *RingSPSC[T] {
 	// Set defaults
 	if cfg.Capacity == 0 {
-		cfg.Capacity = ringBufCapacity
+		cfg.Capacity = defaultRingBufCapacity
 	}
 
 	// capacity: must be a power of 2, will be automatically rounded up if not

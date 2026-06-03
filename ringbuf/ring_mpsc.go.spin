@@ -61,7 +61,7 @@ type RingMPSC[T any] struct {
 func NewRingMPSC[T any](cfg RingMPSCConfig[T]) *RingMPSC[T] {
 	// Set defaults
 	if cfg.Capacity == 0 {
-		cfg.Capacity = ringBufCapacity
+		cfg.Capacity = defaultRingBufCapacity
 	}
 
 	// capacity: must be a power of 2, will be automatically rounded up if not
