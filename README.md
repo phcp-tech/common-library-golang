@@ -1,3 +1,6 @@
+[![Go Reference](https://pkg.go.dev/badge/github.com/phcp-tech/common-library-golang.svg)](https://pkg.go.dev/github.com/phcp-tech/common-library-golang)
+
+
 # phcp-library-golang
 
 A shared Go library for the PHCP ecosystem, providing core infrastructure components for microservice development.
