@@ -1,0 +1,7 @@
+[app]
+  [app.env]
+    prefix = "EMBED_"
+
+[server]
+  host = "embedded-host"
+  port = 7070
