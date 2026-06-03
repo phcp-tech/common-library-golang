@@ -148,7 +148,8 @@ var Instance = sync.OnceValue(func() *Log {
 		)
 	}
 
-	// Enable _log.Logger to use the structured logger. for example: log.Print("Hello from log.Logger")
+	// Routes standard library log output through this structured handler.
+	// After this call, stdlib log.Print / log.Printf calls are emitted as structured JSON entries.
 	slog.SetDefault(log.Logger)
 
 	return log
