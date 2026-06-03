@@ -21,7 +21,8 @@ import (
 	"sync/atomic"
 )
 
-const ringBufCapacity uint64 = 1024
+// defaultRingBufCapacity is the default capacity of the ring buffer if not specified in config
+const defaultRingBufCapacity uint64 = 1024
 
 // ProcessFunc defines the function signature for processing messages
 // T can be any type: []byte, string, struct, etc.
@@ -31,7 +32,6 @@ type ProcessFunc[T any] func(T)
 // T is the type of messages being processed
 type RingSPSCConfig[T any] struct {
 	// Capacity is the buffer size of the ring buffer
-	// Default: 1024
 	Capacity uint64
 
 	// ProcessFunc is the function to process each message
@@ -61,7 +61,7 @@ type RingSPSC[T any] struct {
 func NewRingSPSC[T any](cfg RingSPSCConfig[T]) *RingSPSC[T] {
 	// Set defaults
 	if cfg.Capacity == 0 {
-		cfg.Capacity = ringBufCapacity
+		cfg.Capacity = defaultRingBufCapacity
 	}
 
 	// capacity: must be a power of 2, will be automatically rounded up if not

@@ -60,8 +60,8 @@ func newSPSC(cap uint64) *RingSPSC[int] {
 
 func TestSPSC_DefaultCapacity(t *testing.T) {
 	rb := NewRingSPSC(RingSPSCConfig[int]{})
-	if rb.Capacity() != ringBufCapacity {
-		t.Fatalf("expected default capacity %d, got %d", ringBufCapacity, rb.Capacity())
+	if rb.Capacity() != defaultRingBufCapacity {
+		t.Fatalf("expected default capacity %d, got %d", defaultRingBufCapacity, rb.Capacity())
 	}
 }
 
@@ -301,8 +301,8 @@ func newMPSC(cap uint64) *RingMPSC[int] {
 
 func TestMPSC_DefaultCapacity(t *testing.T) {
 	rb := NewRingMPSC(RingMPSCConfig[int]{})
-	if rb.Capacity() != ringBufCapacity {
-		t.Fatalf("expected default capacity %d, got %d", ringBufCapacity, rb.Capacity())
+	if rb.Capacity() != defaultRingBufCapacity {
+		t.Fatalf("expected default capacity %d, got %d", defaultRingBufCapacity, rb.Capacity())
 	}
 }
 
