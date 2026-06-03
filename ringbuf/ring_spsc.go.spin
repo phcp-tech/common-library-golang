@@ -37,7 +37,6 @@ type ProcessFunc[T any] func(T)
 // T is the type of messages being processed
 type RingSPSCConfig[T any] struct {
 	// Capacity is the buffer size of the ring buffer
-	// Default: 1024
 	Capacity uint64
 
 	// ProcessFunc is the function to process each message

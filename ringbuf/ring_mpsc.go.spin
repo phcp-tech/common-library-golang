@@ -31,7 +31,6 @@ import (
 // T is the type of messages being processed
 type RingMPSCConfig[T any] struct {
 	// Capacity is the buffer size of the ring buffer
-	// Default: 1024
 	Capacity uint64
 
 	// ProcessFunc is the function to process each message
