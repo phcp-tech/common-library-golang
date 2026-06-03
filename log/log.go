@@ -31,10 +31,11 @@ import (
 )
 
 const (
-	// log file
-	LOG_FILE_MAX_SIZE    = 100 // LOG_FILE_MAX_SIZE is the maximum size of a single log file in megabytes before rotation.
-	LOG_FILE_MAX_BACKUPS = 100 // LOG_FILE_MAX_BACKUPS is the maximum number of rotated log backup files to retain.
-	LOG_FILE_MAX_AGE     = 0   // LOG_FILE_MAX_AGE is the maximum number of days to retain old log files; 0 means never delete.
+	// log file rotation settings; can be overridden by environment config
+	defaultLogFileMaxSize    = 100  // defaultLogFileMaxSize is the maximum size of a single log file in megabytes before rotation.
+	defaultLogFileMaxBackups = 100  // defaultLogFileMaxBackups is the maximum number of rotated log backup files to retain.
+	defaultLogFileMaxAge     = 0    // defaultLogFileMaxAge is the maximum number of days to retain old log files; 0 means never delete.
+	defaultLogFileCompress   = true // defaultLogFileCompress indicates whether to compress rotated log files using gzip.
 )
 
 // asyncWriter wraps an io.Writer with a RingMPSC buffer so callers return immediately
@@ -107,20 +108,25 @@ var Instance = sync.OnceValue(func() *Log {
 	// write to log file for rotate. If there no env, write to stdout
 	if env.Env() != nil && env.Env().Bool("log.writefile") {
 		log.logFile.Filename = env.Env().String("log.path")
+		log.logFile.LocalTime = false
+
 		log.logFile.MaxSize = env.Env().Int("log.file.max.size")
 		if log.logFile.MaxSize == 0 {
-			log.logFile.MaxSize = LOG_FILE_MAX_SIZE
+			log.logFile.MaxSize = defaultLogFileMaxSize
 		}
 		log.logFile.MaxBackups = env.Env().Int("log.file.max.backups")
 		if log.logFile.MaxBackups == 0 {
-			log.logFile.MaxBackups = LOG_FILE_MAX_BACKUPS
+			log.logFile.MaxBackups = defaultLogFileMaxBackups
 		}
 		log.logFile.MaxAge = env.Env().Int("log.file.max.age")
 		if log.logFile.MaxAge == 0 {
-			log.logFile.MaxAge = LOG_FILE_MAX_AGE
+			log.logFile.MaxAge = defaultLogFileMaxAge
 		}
-		log.logFile.Compress = true
-		log.logFile.LocalTime = false
+		if env.Env().Exists("log.file.compress") {
+			log.logFile.Compress = env.Env().Bool("log.file.compress")
+		} else {
+			log.logFile.Compress = defaultLogFileCompress
+		}
 
 		log.asyncWriter = newAsyncWriter(log.logFile)
 		log.Logger = slog.New(
