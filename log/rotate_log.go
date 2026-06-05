@@ -85,8 +85,7 @@ type Log struct {
 
 var (
 	instance *Log
-	// once ensures InitLog initialises the logger exactly once.
-	once sync.Once
+	once     sync.Once
 )
 
 // InitLog configures the logger. It must be called once at application startup
@@ -138,14 +137,14 @@ func newLog(cfg Config) *Log {
 		maxBackups := defaultLogFileMaxBackups
 		maxAge := defaultLogFileMaxAge
 
-		// If the user explicitly set a value (non-zero), use it instead of the default.
-		if cfg.MaxSizeMB != 0 {
+		// If the user explicitly set a value (greater than 0), use it instead of the default.
+		if cfg.MaxSizeMB > 0 {
 			maxSize = cfg.MaxSizeMB
 		}
-		if cfg.MaxBackups != 0 {
+		if cfg.MaxBackups > 0 {
 			maxBackups = cfg.MaxBackups
 		}
-		if cfg.MaxAgeDays != 0 {
+		if cfg.MaxAgeDays > 0 {
 			maxAge = cfg.MaxAgeDays
 		}
 		l.logFile = &lumberjack.Logger{
