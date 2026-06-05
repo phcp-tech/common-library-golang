@@ -55,16 +55,13 @@ func ExampleNewSQLite_file() {
 
 // ExampleInitDefault shows the singleton pattern: call InitDefault once at
 // application startup. Subsequent calls are silently ignored (sync.Once).
+// After a successful call, Default() will return the initialised *sql.DB which can
+// be passed directly to sqlc-generated Queries.
 func ExampleInitDefault() {
 	err := sqlite.InitDefault(&sqlite.Config{Path: ":memory:"})
 	fmt.Println(err)
+	fmt.Println(sqlite.Default() != nil)
 	// Output:
 	// <nil>
-}
-
-// ExampleDefault shows how to retrieve the singleton *sql.DB created by InitDefault.
-// Returns nil if InitDefault has not been called yet.
-func ExampleDefault() {
-	db := sqlite.Default()
-	_ = db // pass to sqlc-generated Queries
+	// true
 }

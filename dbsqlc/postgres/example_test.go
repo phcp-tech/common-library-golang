@@ -49,6 +49,8 @@ func ExampleNewPostgres() {
 // ExampleInitDefault shows the singleton pattern for the default PostgreSQL pool.
 // Call InitDefault once at application startup.
 // Subsequent calls are silently ignored (sync.Once).
+// After a successful call, Default() will return the initialised *pgxpool.Pool which can
+// be passed directly to sqlc-generated Queries.
 func ExampleInitDefault() {
 	err := postgres.InitDefault(&postgres.Config{
 		Host:            "127.0.0.1",
@@ -62,13 +64,8 @@ func ExampleInitDefault() {
 		ConnMaxIdletime: 10,
 	})
 	fmt.Println(err)
+	fmt.Println(postgres.Default() != nil)
 	// Output:
 	// <nil>
-}
-
-// ExampleDefault shows how to retrieve the singleton *pgxpool.Pool created by InitDefault.
-// Returns nil if InitDefault has not been called yet.
-func ExampleDefault() {
-	pool := postgres.Default()
-	_ = pool // pass to sqlc-generated Queries
+	// true
 }
