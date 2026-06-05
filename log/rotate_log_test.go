@@ -15,34 +15,34 @@
 package log
 
 import (
+	"log/slog"
 	"os"
-	"strings"
+	"path/filepath"
+	"sync"
 	"testing"
-
-	"github.com/phcp-tech/common-library-golang/env"
 )
 
-// TestMain initialises a minimal environment so that the sync.OnceValue
-// initialisation closure in Instance takes the "env.Env() != nil" branch,
-// covering the log-level and write-to-file configuration paths.
+// TestMain initialises the logger with a temporary log file so that all tests
+// exercise the file-logging code path (asyncWriter + lumberjack).
+// CloseLogFile is called after the test run to drain the ring buffer cleanly.
 func TestMain(m *testing.M) {
-	dir := strings.ReplaceAll(os.TempDir(), `\`, "/")
-	toml := "[app]\nname = \"logtest\"\n[app.env]\nprefix = \"TEST_\"\n[log]\nlevel = \"debug\"\nwritefile = true\npath = \"" +
-		dir + "/logtest.log\"\n"
-
-	f, err := os.CreateTemp("", "logtest-*.toml")
+	f, err := os.CreateTemp("", "logtest-*.log")
 	if err != nil {
 		os.Exit(2)
 	}
-	f.WriteString(toml) //nolint:errcheck
 	f.Close()
 	defer os.Remove(f.Name())
 
-	if err := env.InitEnv(f.Name()); err != nil {
-		os.Exit(2)
-	}
+	InitLog(&Config{
+		Level:    "debug",
+		FilePath: f.Name(),
+	})
 
-	os.Exit(m.Run())
+	code := m.Run()
+
+	// Flush the async ring buffer and release the log file before exit.
+	CloseLogFile()
+	os.Exit(code)
 }
 
 // -----------------------------------------------------------------------
@@ -82,41 +82,23 @@ func TestSetLevel_InvalidLevel_ErrorMessage(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestSetLevel_ChangesLevel(t *testing.T) {
-	// After calling SetLevel("debug") the internal logLevel should reflect Debug.
-	if err := SetLevel("debug"); err != nil {
-		t.Fatalf("SetLevel(debug): %v", err)
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"debug", "DEBUG"},
+		{"info", "INFO"},
+		{"warn", "WARN"},
+		{"error", "ERROR"},
 	}
-	want := "DEBUG"
-	got := Instance().logLevel.Level().String()
-	if got != want {
-		t.Errorf("logLevel after SetLevel(debug): want %s, got %s", want, got)
-	}
-
-	if err := SetLevel("error"); err != nil {
-		t.Fatalf("SetLevel(error): %v", err)
-	}
-	want = "ERROR"
-	got = Instance().logLevel.Level().String()
-	if got != want {
-		t.Errorf("logLevel after SetLevel(error): want %s, got %s", want, got)
-	}
-
-	if err := SetLevel("warn"); err != nil {
-		t.Fatalf("SetLevel(warn): %v", err)
-	}
-	want = "WARN"
-	got = Instance().logLevel.Level().String()
-	if got != want {
-		t.Errorf("logLevel after SetLevel(warn): want %s, got %s", want, got)
-	}
-
-	if err := SetLevel("info"); err != nil {
-		t.Fatalf("SetLevel(info): %v", err)
-	}
-	want = "INFO"
-	got = Instance().logLevel.Level().String()
-	if got != want {
-		t.Errorf("logLevel after SetLevel(info): want %s, got %s", want, got)
+	for _, c := range cases {
+		if err := SetLevel(c.input); err != nil {
+			t.Fatalf("SetLevel(%q): %v", c.input, err)
+		}
+		got := Instance().logLevel.Level().String()
+		if got != c.want {
+			t.Errorf("logLevel after SetLevel(%q): want %s, got %s", c.input, c.want, got)
+		}
 	}
 }
 
@@ -199,6 +181,28 @@ func TestDebugf_DoesNotPanic(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// With variants – must not panic
+// -----------------------------------------------------------------------
+
+func TestInfoWith_DoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("InfoWith panicked: %v", r)
+		}
+	}()
+	InfoWith("structured message", "key", "value", "count", 1)
+}
+
+func TestErrorWith_DoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("ErrorWith panicked: %v", r)
+		}
+	}()
+	ErrorWith("structured error", "error", "something went wrong", "code", 500)
+}
+
+// -----------------------------------------------------------------------
 // Instance – singleton is non-nil and has a non-nil Logger
 // -----------------------------------------------------------------------
 
@@ -224,6 +228,225 @@ func TestInstance_Idempotent(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// InitLog – instance is initialised correctly
+// -----------------------------------------------------------------------
+
+// resetLog resets the singleton state for the duration of a single test.
+// It saves and restores instance and once so other tests are unaffected.
+func resetLog(t *testing.T) {
+	t.Helper()
+	savedInst := instance // sync.Once must not be copied — save only the instance pointer
+	instance = nil
+	once = sync.Once{}
+	t.Cleanup(func() {
+		instance = savedInst
+		once = sync.Once{}
+		once.Do(func() {}) // mark once as "already run" to match pre-test state
+	})
+}
+
+// TestInitLog_WithFileConfig verifies that InitLog applies every Config field
+// to the initialised logger instance.
+func TestInitLog_WithFileConfig(t *testing.T) {
+	resetLog(t)
+
+	cfg := Config{
+		Level:      "debug",
+		FilePath:   filepath.Join(t.TempDir(), "test.log"),
+		MaxSizeMB:  50,
+		MaxBackups: 5,
+		MaxAgeDays: 14,
+		Compress:   true,
+	}
+	InitLog(&cfg)
+	t.Cleanup(func() {
+		if instance != nil && instance.asyncWriter != nil {
+			instance.asyncWriter.Close()
+		}
+		if instance != nil && instance.logFile != nil {
+			instance.logFile.Close() //nolint:errcheck
+		}
+	})
+
+	l := Instance()
+	if l.logFile == nil {
+		t.Fatal("logFile should not be nil when FilePath is set")
+	}
+	if l.logFile.Filename != cfg.FilePath {
+		t.Errorf("FilePath: want %q, got %q", cfg.FilePath, l.logFile.Filename)
+	}
+	if l.logFile.MaxSize != 50 {
+		t.Errorf("MaxSize: want 50, got %d", l.logFile.MaxSize)
+	}
+	if l.logFile.MaxBackups != 5 {
+		t.Errorf("MaxBackups: want 5, got %d", l.logFile.MaxBackups)
+	}
+	if l.logFile.MaxAge != 14 {
+		t.Errorf("MaxAgeDays: want 14, got %d", l.logFile.MaxAge)
+	}
+	if !l.logFile.Compress {
+		t.Error("Compress: want true, got false")
+	}
+	if l.logLevel.Level() != slog.LevelDebug {
+		t.Errorf("Level: want DEBUG, got %v", l.logLevel.Level())
+	}
+}
+
+// TestInstance_DefaultProducesStdout verifies that InitLog() with no arguments
+// produces a logger in stdout mode at INFO level.
+func TestInstance_DefaultProducesStdout(t *testing.T) {
+	l := newLog(Config{}) // equivalent to what InitLog() configures internally
+	if l.logFile != nil {
+		t.Error("logFile should be nil when FilePath is empty (stdout mode)")
+	}
+	if l.asyncWriter != nil {
+		t.Error("asyncWriter should be nil when FilePath is empty (stdout mode)")
+	}
+	if l.logLevel.Level() != slog.LevelInfo {
+		t.Errorf("default level: want INFO, got %v", l.logLevel.Level())
+	}
+}
+
+// -----------------------------------------------------------------------
+// newLog – stdout path
+// -----------------------------------------------------------------------
+
+// TestNewLog_StdoutPath verifies that an empty FilePath produces a logger
+// that writes to stdout with no asyncWriter or logFile.
+func TestNewLog_StdoutPath(t *testing.T) {
+	l := newLog(Config{})
+	if l.asyncWriter != nil {
+		t.Error("asyncWriter should be nil for stdout logging")
+	}
+	if l.logFile != nil {
+		t.Error("logFile should be nil for stdout logging")
+	}
+	if l.Logger == nil {
+		t.Error("Logger should not be nil")
+	}
+}
+
+// -----------------------------------------------------------------------
+// newLog – file path: asyncWriter and logFile are created
+// -----------------------------------------------------------------------
+
+// TestNewLog_FilePathCreatesAsyncWriter verifies that a non-empty FilePath
+// creates both an asyncWriter and a logFile.
+func TestNewLog_FilePathCreatesAsyncWriter(t *testing.T) {
+	l := newLog(Config{FilePath: filepath.Join(t.TempDir(), "test.log")})
+	t.Cleanup(func() {
+		l.asyncWriter.Close()
+		l.logFile.Close()
+	})
+
+	if l.asyncWriter == nil {
+		t.Error("asyncWriter should not be nil for file logging")
+	}
+	if l.logFile == nil {
+		t.Error("logFile should not be nil for file logging")
+	}
+}
+
+// -----------------------------------------------------------------------
+// newLog – Config fields are applied correctly
+// -----------------------------------------------------------------------
+
+func newLogWithTempFile(t *testing.T, cfg Config) *Log {
+	t.Helper()
+	cfg.FilePath = filepath.Join(t.TempDir(), "test.log")
+	l := newLog(cfg)
+	t.Cleanup(func() {
+		l.asyncWriter.Close()
+		l.logFile.Close()
+	})
+	return l
+}
+
+func TestNewLog_MaxSizeMB_Default(t *testing.T) {
+	l := newLogWithTempFile(t, Config{})
+	if l.logFile.MaxSize != defaultLogFileMaxSize {
+		t.Errorf("MaxSize: want %d (default), got %d", defaultLogFileMaxSize, l.logFile.MaxSize)
+	}
+}
+
+func TestNewLog_MaxSizeMB_Custom(t *testing.T) {
+	l := newLogWithTempFile(t, Config{MaxSizeMB: 50})
+	if l.logFile.MaxSize != 50 {
+		t.Errorf("MaxSize: want 50, got %d", l.logFile.MaxSize)
+	}
+}
+
+func TestNewLog_MaxBackups_Default(t *testing.T) {
+	l := newLogWithTempFile(t, Config{})
+	if l.logFile.MaxBackups != defaultLogFileMaxBackups {
+		t.Errorf("MaxBackups: want %d (default), got %d", defaultLogFileMaxBackups, l.logFile.MaxBackups)
+	}
+}
+
+func TestNewLog_MaxBackups_Custom(t *testing.T) {
+	l := newLogWithTempFile(t, Config{MaxBackups: 5})
+	if l.logFile.MaxBackups != 5 {
+		t.Errorf("MaxBackups: want 5, got %d", l.logFile.MaxBackups)
+	}
+}
+
+func TestNewLog_MaxAgeDays_Default(t *testing.T) {
+	l := newLogWithTempFile(t, Config{})
+	if l.logFile.MaxAge != defaultLogFileMaxAge {
+		t.Errorf("MaxAge: want %d (default), got %d", defaultLogFileMaxAge, l.logFile.MaxAge)
+	}
+}
+
+func TestNewLog_MaxAgeDays_Custom(t *testing.T) {
+	l := newLogWithTempFile(t, Config{MaxAgeDays: 30})
+	if l.logFile.MaxAge != 30 {
+		t.Errorf("MaxAge: want 30, got %d", l.logFile.MaxAge)
+	}
+}
+
+func TestNewLog_Compress_DefaultFalse(t *testing.T) {
+	l := newLogWithTempFile(t, Config{})
+	if l.logFile.Compress != false {
+		t.Error("Compress: want false (default), got true")
+	}
+}
+
+func TestNewLog_Compress_True(t *testing.T) {
+	l := newLogWithTempFile(t, Config{Compress: true})
+	if !l.logFile.Compress {
+		t.Error("Compress: want true, got false")
+	}
+}
+
+// -----------------------------------------------------------------------
+// newLog – Level is resolved correctly
+// -----------------------------------------------------------------------
+
+func TestNewLog_Level(t *testing.T) {
+	cases := []struct {
+		input string
+		want  slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"DEBUG", slog.LevelDebug},  // case-insensitive
+		{"INFO", slog.LevelInfo},
+		{"",       slog.LevelInfo},  // empty → default info
+		{"invalid", slog.LevelInfo}, // unrecognised → default info
+	}
+	for _, c := range cases {
+		t.Run(c.input, func(t *testing.T) {
+			l := newLog(Config{Level: c.input})
+			if got := l.logLevel.Level(); got != c.want {
+				t.Errorf("Level(%q): want %v, got %v", c.input, c.want, got)
+			}
+		})
+	}
+}
+
+// -----------------------------------------------------------------------
 // CloseLogFile – safe to call (must not panic)
 // -----------------------------------------------------------------------
 
@@ -233,6 +456,6 @@ func TestCloseLogFile_DoesNotPanic(t *testing.T) {
 			t.Errorf("CloseLogFile panicked: %v", r)
 		}
 	}()
-	// When no file is configured the lumberjack.Logger.Close() is a no-op; must not panic.
+	// CloseLogFile is idempotent; calling it mid-test must not panic.
 	CloseLogFile()
 }

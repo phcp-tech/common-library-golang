@@ -18,6 +18,7 @@ import (
 	"embed"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/env"
@@ -26,46 +27,57 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// Golbal ENV
-var _ENV *koanf.Koanf
+// Global ENV singleton; set exactly once by InitEnv.
+var (
+	instance *koanf.Koanf
+	once     sync.Once
+)
 
 // Env returns the global koanf configuration instance loaded by InitEnv.
+// It returns nil if InitEnv has not been called or if initialization failed.
 func Env() *koanf.Koanf {
-	return _ENV
+	return instance
 }
 
 // InitEnv initializes the global environment configuration by loading the specified
 // TOML config file and then merging any matching OS environment variables (using the
 // prefix defined by app.env.prefix in the config file). If configFS is provided and
 // non-nil, the file is read from the embedded filesystem instead of the real filesystem.
+// Only the first call takes effect; subsequent calls return the result of the first
+// initialization without reloading.
 func InitEnv(configFile string, configFS ...*embed.FS) error {
-	//1. Load config file
-	_ENV = koanf.New(".")
-	if configFS != nil && configFS[0] != nil {
-		//for on execute binary file, use fs.Provider instead of file.Provider
-		if err := _ENV.Load(fs.Provider(configFS[0], configFile), toml.Parser()); err != nil {
-			return err
+	var err error
+	once.Do(func() {
+		//1. Load config file
+		k := koanf.New(".")
+		if configFS != nil && configFS[0] != nil {
+			//for on execute binary file, use fs.Provider instead of file.Provider
+			if err = k.Load(fs.Provider(configFS[0], configFile), toml.Parser()); err != nil {
+				return
+			}
+		} else {
+			if err = k.Load(file.Provider(configFile), toml.Parser()); err != nil {
+				return
+			}
 		}
-	} else {
-		if err := _ENV.Load(file.Provider(configFile), toml.Parser()); err != nil {
-			return err
-		}
-	}
 
-	// only print variables read from file, don't print variables read from environment
-	fmt.Println("Application read environment variables:")
-	_ENV.Print()
+		// only print variables read from file, don't print variables read from environment
+		fmt.Println("Application read environment variables:")
+		k.Print()
 
-	// Read log level from environment, then merge into config file variables.
-	prefix := "TM_"
-	prefix = _ENV.String("app.env.prefix")
-	_ENV.Load(env.Provider(prefix, ".", func(s string) string {
-		return strings.ReplaceAll(strings.ToLower(
-			strings.TrimPrefix(s, prefix)), "_", ".")
-	}), nil)
+		// Read log level from environment, then merge into config file variables.
+		prefix := "TM_"
+		prefix = k.String("app.env.prefix")
+		k.Load(env.Provider(prefix, ".", func(s string) string { //nolint:errcheck
+			return strings.ReplaceAll(strings.ToLower(
+				strings.TrimPrefix(s, prefix)), "_", ".")
+		}), nil)
 
-	// this Print only for test
-	//fmt.Println("\nMerged environment variables:")
-	//_ENV.Print()
-	return nil
+		// this Print only for test
+		//fmt.Println("\nMerged environment variables:")
+		//k.Print()
+
+		instance = k
+	})
+	return err
 }

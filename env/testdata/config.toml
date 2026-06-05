@@ -1,7 +1,7 @@
-[app]
-  [app.env]
-    prefix = "EMBED_"
+[app.env]
+prefix = "EMBED_"
 
 [server]
-  host = "embedded-host"
-  port = 7070
+host.name = "embedded-host"
+host.ip.address = "127.0.0.1"
+port = 7070

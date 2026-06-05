@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phcp-tech/common-library-golang/env"
 	"github.com/phcp-tech/common-library-golang/ringbuf"
 
 	"github.com/natefinch/lumberjack"
@@ -31,12 +30,23 @@ import (
 )
 
 const (
-	// log file rotation settings; can be overridden by environment config
-	defaultLogFileMaxSize    = 100  // defaultLogFileMaxSize is the maximum size of a single log file in megabytes before rotation.
-	defaultLogFileMaxBackups = 100  // defaultLogFileMaxBackups is the maximum number of rotated log backup files to retain.
-	defaultLogFileMaxAge     = 0    // defaultLogFileMaxAge is the maximum number of days to retain old log files; 0 means never delete.
-	defaultLogFileCompress   = true // defaultLogFileCompress indicates whether to compress rotated log files using gzip.
+	// log file rotation defaults; used when the corresponding Config field is zero.
+	defaultLogFileMaxSize    = 100 // defaultLogFileMaxSize is the maximum size of a single log file in megabytes before rotation.
+	defaultLogFileMaxBackups = 100 // defaultLogFileMaxBackups is the maximum number of rotated log backup files to retain.
+	defaultLogFileMaxAge     = 0   // defaultLogFileMaxAge is the maximum number of days to retain old log files; 0 means never delete.
 )
+
+// Config holds all configuration for the logger.
+// Call Init with a Config before the first log call.
+// If FilePath is empty, logs are written to stdout.
+type Config struct {
+	Level      string // "debug"|"info"|"warn"|"error"; default "info"
+	FilePath   string // if non-empty, enables rotating file logging
+	MaxSizeMB  int    // max size of a single log file in MB; default 100
+	MaxBackups int    // max number of rotated backup files to retain; default 100
+	MaxAgeDays int    // max age in days before deletion; 0 means never delete
+	Compress   bool   // compress rotated files with gzip
+}
 
 // asyncWriter wraps an io.Writer with a RingMPSC buffer so callers return immediately
 // and the actual Write is handled by the consumer goroutine.
@@ -68,92 +78,105 @@ func (aw *asyncWriter) Close() {
 // Log holds the structured logger, its dynamic level, and the optional rotating log file writer.
 type Log struct {
 	Logger      *slog.Logger
-	logLevel    *slog.LevelVar // default is INFO
-	logFile     *lumberjack.Logger
-	asyncWriter *asyncWriter // non-nil only when file logging is enabled
+	logLevel    *slog.LevelVar     // default is INFO
+	logFile     *lumberjack.Logger // non-nil only when file logging is enabled
+	asyncWriter *asyncWriter       // non-nil only when file logging is enabled
 }
 
-// Instance is the package-level singleton Log, initialized exactly once on first access.
-// It reads log level and file rotation settings from the environment configuration.
-var Instance = sync.OnceValue(func() *Log {
-	// Log instance
-	log := &Log{
-		Logger:   nil,
-		logLevel: &slog.LevelVar{},
-		logFile:  &lumberjack.Logger{},
-	}
+var (
+	instance *Log
+	// once ensures InitLog initialises the logger exactly once.
+	once sync.Once
+)
 
-	// set log level from env. If there no env, set to info
-	level := "info"
-	if env.Env() != nil {
-		level = strings.ToLower(strings.TrimSpace(env.Env().String("log.level")))
-	}
-	switch level {
+// InitLog configures the logger. It must be called once at application startup
+// before any log function (Debug/Info/Warn/Error and their variants).
+// Subsequent calls have no effect (only the first call takes effect).
+// If called with no arguments, or with a nil Config pointer, the logger
+// writes to stdout at INFO level. Pass a non-nil Config with FilePath set to enable
+// rotating file logging.
+func InitLog(cfg ...*Config) {
+	once.Do(func() {
+		c := Config{}
+		if len(cfg) > 0 && cfg[0] != nil {
+			c = *cfg[0]
+		}
+		instance = newLog(c)
+	})
+}
+
+// Instance returns the singleton Log initialised by InitLog.
+// Returns nil if InitLog has not been called.
+func Instance() *Log {
+	return instance
+}
+
+func newLog(cfg Config) *Log {
+	l := &Log{logLevel: &slog.LevelVar{}}
+
+	// resolve log level
+	switch strings.ToLower(strings.TrimSpace(cfg.Level)) {
 	case "error":
-		log.logLevel.Set(slog.LevelError)
+		l.logLevel.Set(slog.LevelError)
 	case "warn":
-		log.logLevel.Set(slog.LevelWarn)
+		l.logLevel.Set(slog.LevelWarn)
 	case "debug":
-		log.logLevel.Set(slog.LevelDebug)
+		l.logLevel.Set(slog.LevelDebug)
 	default:
-		log.logLevel.Set(slog.LevelInfo)
+		l.logLevel.Set(slog.LevelInfo)
 	}
 
-	// slog options
 	opts := &slog.HandlerOptions{
 		AddSource: false,
-		Level:     log.logLevel,
+		Level:     l.logLevel,
 	}
 
-	// write to log file for rotate. If there no env, write to stdout
-	if env.Env() != nil && env.Env().Bool("log.writefile") {
-		log.logFile.Filename = env.Env().String("log.path")
-		log.logFile.LocalTime = false
+	var w io.Writer
+	if cfg.FilePath != "" {
+		// resolve log file rotation settings, using defaults for any zero values
+		maxSize := defaultLogFileMaxSize
+		maxBackups := defaultLogFileMaxBackups
+		maxAge := defaultLogFileMaxAge
 
-		log.logFile.MaxSize = env.Env().Int("log.file.max.size")
-		if log.logFile.MaxSize == 0 {
-			log.logFile.MaxSize = defaultLogFileMaxSize
+		// If the user explicitly set a value (non-zero), use it instead of the default.
+		if cfg.MaxSizeMB != 0 {
+			maxSize = cfg.MaxSizeMB
 		}
-		log.logFile.MaxBackups = env.Env().Int("log.file.max.backups")
-		if log.logFile.MaxBackups == 0 {
-			log.logFile.MaxBackups = defaultLogFileMaxBackups
+		if cfg.MaxBackups != 0 {
+			maxBackups = cfg.MaxBackups
 		}
-		log.logFile.MaxAge = env.Env().Int("log.file.max.age")
-		if log.logFile.MaxAge == 0 {
-			log.logFile.MaxAge = defaultLogFileMaxAge
+		if cfg.MaxAgeDays != 0 {
+			maxAge = cfg.MaxAgeDays
 		}
-		if env.Env().Exists("log.file.compress") {
-			log.logFile.Compress = env.Env().Bool("log.file.compress")
-		} else {
-			log.logFile.Compress = defaultLogFileCompress
+		l.logFile = &lumberjack.Logger{
+			Filename:   cfg.FilePath,
+			MaxSize:    maxSize,
+			MaxBackups: maxBackups,
+			MaxAge:     maxAge,
+			Compress:   cfg.Compress,
+			LocalTime:  false,
 		}
-
-		log.asyncWriter = newAsyncWriter(log.logFile)
-		log.Logger = slog.New(
-			slogFormatter.NewFormatterHandler(
-				slogFormatter.TimezoneConverter(time.UTC),
-				slogFormatter.TimeFormatter(time.RFC3339, nil),
-			)(
-				slog.NewJSONHandler(log.asyncWriter, opts),
-			),
-		)
+		l.asyncWriter = newAsyncWriter(l.logFile)
+		w = l.asyncWriter
 	} else {
-		log.Logger = slog.New(
-			slogFormatter.NewFormatterHandler(
-				slogFormatter.TimezoneConverter(time.UTC),
-				slogFormatter.TimeFormatter(time.RFC3339, nil),
-			)(
-				slog.NewJSONHandler(os.Stdout, opts),
-			),
-		)
+		w = os.Stdout
 	}
+
+	l.Logger = slog.New(
+		slogFormatter.NewFormatterHandler(
+			slogFormatter.TimezoneConverter(time.UTC),
+			slogFormatter.TimeFormatter(time.RFC3339, nil),
+		)(
+			slog.NewJSONHandler(w, opts),
+		),
+	)
 
 	// Routes standard library log output through this structured handler.
 	// After this call, stdlib log.Print / log.Printf calls are emitted as structured JSON entries.
-	slog.SetDefault(log.Logger)
+	slog.SetDefault(l.Logger)
 
-	return log
-})
+	return l
+}
 
 // SetLevel dynamically changes the log level of the singleton logger.
 // Accepted values are "error", "warn", "info", and "debug" (case-insensitive).
@@ -176,58 +199,55 @@ func SetLevel(level string) error {
 	return nil
 }
 
-// CloseLogFile closes the underlying rotating log file used by the singleton logger.
-// It should be called during graceful shutdown to flush and release file resources.
+// CloseLogFile flushes all pending async log entries and closes the underlying
+// rotating log file. It should be called during graceful shutdown.
+// No-op when logging to stdout.
 func CloseLogFile() {
 	l := Instance()
 	if l.asyncWriter != nil {
 		l.asyncWriter.Close() // drain ring buffer before closing the file
 	}
-	l.logFile.Close()
+	if l.logFile != nil {
+		l.logFile.Close() //nolint:errcheck
+	}
 }
 
 // Debug logs a message at DEBUG level using the singleton logger.
-func Debug(msg string) {
-	Instance().Logger.Debug(msg)
-}
+func Debug(msg string) { Instance().Logger.Debug(msg) }
 
 // Info logs a message at INFO level using the singleton logger.
-func Info(msg string) {
-	Instance().Logger.Info(msg)
-}
+func Info(msg string) { Instance().Logger.Info(msg) }
 
 // Warn logs a message at WARN level using the singleton logger.
-func Warn(msg string) {
-	Instance().Logger.Warn(msg)
-}
+func Warn(msg string) { Instance().Logger.Warn(msg) }
 
 // Error logs a message at ERROR level using the singleton logger.
-func Error(msg string) {
-	Instance().Logger.Error(msg)
-}
+func Error(msg string) { Instance().Logger.Error(msg) }
 
 // Debugf logs a formatted message at DEBUG level using the singleton logger.
-func Debugf(format string, args ...any) {
-	Instance().Logger.Debug(fmt.Sprintf(format, args...))
-}
+func Debugf(format string, args ...any) { Instance().Logger.Debug(fmt.Sprintf(format, args...)) }
 
 // Infof logs a formatted message at INFO level using the singleton logger.
-func Infof(format string, args ...any) {
-	Instance().Logger.Info(fmt.Sprintf(format, args...))
-}
+func Infof(format string, args ...any) { Instance().Logger.Info(fmt.Sprintf(format, args...)) }
 
 // Warnf logs a formatted message at WARN level using the singleton logger.
-func Warnf(format string, args ...any) {
-	Instance().Logger.Warn(fmt.Sprintf(format, args...))
-}
+func Warnf(format string, args ...any) { Instance().Logger.Warn(fmt.Sprintf(format, args...)) }
 
 // Errorf logs a formatted message at ERROR level using the singleton logger.
-func Errorf(format string, args ...any) {
-	Instance().Logger.Error(fmt.Sprintf(format, args...))
-}
+func Errorf(format string, args ...any) { Instance().Logger.Error(fmt.Sprintf(format, args...)) }
 
-// log functions with structured key-value fields
+// DebugWith logs a message at DEBUG level with additional structured key-value fields.
+// args must be alternating key-value pairs, e.g. DebugWith("msg", "key", value).
 func DebugWith(msg string, args ...any) { Instance().Logger.Debug(msg, args...) }
-func InfoWith(msg string, args ...any)  { Instance().Logger.Info(msg, args...) }
-func WarnWith(msg string, args ...any)  { Instance().Logger.Warn(msg, args...) }
+
+// InfoWith logs a message at INFO level with additional structured key-value fields.
+// args must be alternating key-value pairs, e.g. InfoWith("msg", "key", value).
+func InfoWith(msg string, args ...any) { Instance().Logger.Info(msg, args...) }
+
+// WarnWith logs a message at WARN level with additional structured key-value fields.
+// args must be alternating key-value pairs, e.g. WarnWith("msg", "key", value).
+func WarnWith(msg string, args ...any) { Instance().Logger.Warn(msg, args...) }
+
+// ErrorWith logs a message at ERROR level with additional structured key-value fields.
+// args must be alternating key-value pairs, e.g. ErrorWith("msg", "key", value).
 func ErrorWith(msg string, args ...any) { Instance().Logger.Error(msg, args...) }
