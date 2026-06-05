@@ -40,6 +40,8 @@ go test ./... -cover -timeout 60s
 | `env` | `.../common-library-golang/env` | TOML config + environment variable loader |
 | `log` | `.../common-library-golang/log` | Structured JSON logger with file rotation and ringbuf |
 | `ringbuf` | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
+| `dbsqlc/postgres` | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
+| `dbsqlc/sqlite` | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
 
 ---
 
@@ -145,3 +147,69 @@ rb := ringbuf.NewRingMPSC(ringbuf.RingMPSCConfig[[]byte]{
 ```
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/ringbuf#pkg-examples).
+
+---
+
+## dbsqlc/postgres — PostgreSQL Connection Pool
+
+pgx/v5 connection pool for use with [sqlc](https://sqlc.dev/) (`sql_package: "pgx/v5"`).
+Pool creation is **lazy**: `NewPostgres` returns immediately without establishing any
+connections, so no live server is required at startup.
+Implements the singleton pattern via `InitDefault` / `Default`.
+
+```go
+import "github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
+
+// Singleton mode: call once at startup.
+err := postgres.InitDefault(&postgres.Config{
+    Host:            "localhost",
+    Port:            "5432",
+    Database:        "mydb",
+    Username:        "user",
+    Password:        "pass",
+    MaxOpenConns:    100,
+    MaxIdleConns:    25,
+    ConnMaxLifetime: 60, // minutes
+    ConnMaxIdletime: 10, // minutes
+    SearchPath:      "myschema", // optional
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+pool := postgres.Default() // *pgxpool.Pool, pass to sqlc Queries
+```
+
+For cases that require multiple pools, use `NewPostgres` directly instead of the singleton.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/postgres#pkg-examples).
+
+---
+
+## dbsqlc/sqlite — SQLite Connection
+
+Pure-Go SQLite driver ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), no CGO required).
+For use with [sqlc](https://sqlc.dev/) (`sql_package: "database/sql"`).
+Implements the singleton pattern via `InitDefault` / `Default`.
+
+```go
+import "github.com/phcp-tech/common-library-golang/dbsqlc/sqlite"
+
+// In-memory database (tests and short-lived operations).
+db, err := sqlite.NewSQLite(&sqlite.Config{Path: ":memory:"})
+
+// File-based database with WAL mode and foreign key enforcement.
+err := sqlite.InitDefault(&sqlite.Config{
+    Path: "file:app.db?_journal_mode=WAL&_foreign_keys=on",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+db := sqlite.Default() // *sql.DB, pass to sqlc Queries
+```
+
+SQLite allows only one writer at a time. `NewSQLite` calls `SetMaxOpenConns(1)` automatically
+to prevent `database is locked` errors when WAL mode is not in use.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/sqlite#pkg-examples).

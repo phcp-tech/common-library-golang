@@ -1,0 +1,43 @@
+version: "2"
+overrides:
+  go:
+    overrides:
+      - db_type: "pg_catalog.varchar"
+        nullable: true
+        go_type:
+          import: "database/sql"
+          type: "NullString"
+      - db_type: "text"
+        nullable: true
+        go_type:
+          import: "database/sql"
+          type: "NullString"
+      - db_type: "pg_catalog.text"
+        nullable: true
+        go_type:
+          import: "database/sql"
+          type: "NullString"
+      - db_type: "pg_catalog.int4"
+        nullable: true
+        go_type:
+          import: "database/sql"
+          type: "NullInt32"
+      - db_type: "pg_catalog.int8"
+        nullable: true
+        go_type:
+          import: "database/sql"
+          type: "NullInt64"
+sql:
+  - engine: "postgresql"
+    queries: "query.sql"
+    schema: "schema.sql"
+    gen:
+      go:
+        package: "dao"
+        out: "."
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_json_tags: true
+        emit_db_tags: true
+        emit_prepared_queries: true
+        emit_pointers_for_null_types: false
