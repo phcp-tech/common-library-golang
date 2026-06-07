@@ -24,17 +24,39 @@ import (
 // ExampleNewPostgres shows that pool creation is lazy: pgxpool.NewWithConfig does
 // not establish any connections at creation time, so no live PostgreSQL server is
 // required. Connections are acquired on first use.
+// Zero-value pool fields fall back to the dbsqlc package defaults
+// (MaxOpenConns=100, MaxIdleConns=25, ConnMaxLifetime=60min, ConnMaxIdletime=10min).
 func ExampleNewPostgres() {
+	pool, err := postgres.NewPostgres(&postgres.Config{
+		Host:     "127.0.0.1",
+		Port:     "19999",
+		Database: "mydb",
+		Username: "user",
+		Password: "pass",
+	})
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	defer pool.Close()
+	fmt.Println("pool created")
+	// Output:
+	// pool created
+}
+
+// ExampleNewPostgres_customPool shows how to override the default connection pool settings.
+func ExampleNewPostgres_customPool() {
 	pool, err := postgres.NewPostgres(&postgres.Config{
 		Host:            "127.0.0.1",
 		Port:            "19999",
 		Database:        "mydb",
 		Username:        "user",
 		Password:        "pass",
-		MaxOpenConns:    10,
-		MaxIdleConns:    2,
-		ConnMaxLifetime: 60,
-		ConnMaxIdletime: 10,
+		SearchPath:      "myschema",
+		MaxOpenConns:    50,
+		MaxIdleConns:    10,
+		ConnMaxLifetime: 30, // minutes
+		ConnMaxIdletime: 5,  // minutes
 	})
 	if err != nil {
 		fmt.Println("error:", err)
@@ -47,10 +69,9 @@ func ExampleNewPostgres() {
 }
 
 // ExampleInitDefault shows the singleton pattern for the default PostgreSQL pool.
-// Call InitDefault once at application startup.
-// Subsequent calls are silently ignored (sync.Once).
-// After a successful call, Default() will return the initialised *pgxpool.Pool which can
-// be passed directly to sqlc-generated Queries.
+// Call InitDefault once at application startup; subsequent calls are silently
+// ignored (sync.Once). After a successful call, Default returns the initialised
+// *pgxpool.Pool which can be passed directly to sqlc-generated Queries.
 func ExampleInitDefault() {
 	err := postgres.InitDefault(&postgres.Config{
 		Host:            "127.0.0.1",
