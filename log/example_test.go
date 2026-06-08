@@ -25,7 +25,7 @@ import (
 // Example demonstrates the two usage modes of this package.
 //
 // Stdout mode: call [InitLog] with no arguments for stdout output at INFO level.
-// File mode: call [InitLog] once at startup with a Config, and defer [CloseLogFile]
+// File mode: call [InitLog] once at startup with a Config, and defer [Close]
 // to flush all buffered entries before the process exits.
 func Example() {
 	log.InitLog(&log.Config{
@@ -36,7 +36,7 @@ func Example() {
 		MaxAgeDays: 30,
 		Compress:   true,
 	})
-	defer log.CloseLogFile()
+	defer log.Close()
 
 	log.Info("application started")
 	log.InfoWith("request handled",
@@ -58,20 +58,20 @@ func ExampleInitLog_file() {
 		MaxAgeDays: 30,   // delete backups older than 30 days; 0 = never delete
 		Compress:   true, // gzip rotated files to save disk space
 	})
-	defer log.CloseLogFile()
+	defer log.Close()
 
 	log.Info("file logging enabled")
 }
 
-// ExampleCloseLogFile shows that CloseLogFile should be deferred immediately
+// ExampleClose shows that Close should be deferred immediately
 // after InitLog. It flushes the async ring buffer and closes the underlying
 // rotating file. It is a no-op when the logger writes to stdout.
-func ExampleCloseLogFile() {
+func ExampleClose() {
 	log.InitLog(&log.Config{
 		Level:    "info",
 		FilePath: "/var/log/app.log",
 	})
-	defer log.CloseLogFile()
+	defer log.Close()
 
 	log.Info("shutting down")
 }
