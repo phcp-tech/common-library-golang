@@ -1,0 +1,35 @@
+// Copyright(C) 2019-2026 PHCP Technologies. All rights reserved.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+// 	http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package dto
+
+// LoginUser holds the claims embedded inside a JWT token for an authenticated
+// user. Fields such as UserId, Username, ProductId, and Roles must not use
+// omitempty so that zero values are always serialised.
+type LoginUser struct {
+	Token     string   `json:"token,omitempty"`     // stored token used for inter-service REST calls; not included when generating a new token
+	TokenType string   `json:"tokenType,omitempty"` // token purpose: "access" or "refresh"
+	UserId    uint64   `json:"userId"`
+	Username  string   `json:"username"`
+	ProductId uint64   `json:"productId"`
+	Roles     []string `json:"roles"`
+}
+
+// ResponseMessage is the standard response envelope returned by all API
+// endpoints. Code 0 indicates success; any other value indicates failure.
+type ResponseMessage struct {
+	Code    int    `json:"code"`              // 0: success; others: failed
+	Message string `json:"message,omitempty"` // omit in success response
+	Data    any    `json:"data,omitempty"`    // omit in failed response
+}
