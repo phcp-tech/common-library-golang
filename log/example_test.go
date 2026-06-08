@@ -24,9 +24,9 @@ import (
 
 // Example demonstrates the two usage modes of this package.
 //
-// Stdout mode (default): do nothing — [Instance] initialises automatically.
-// File mode: call [InitLog] once at startup before any log function,
-// and defer [CloseLogFile] to flush all buffered entries before the process exits.
+// Stdout mode: call [InitLog] with no arguments for stdout output at INFO level.
+// File mode: call [InitLog] once at startup with a Config, and defer [CloseLogFile]
+// to flush all buffered entries before the process exits.
 func Example() {
 	log.InitLog(&log.Config{
 		Level:      "info",

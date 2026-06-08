@@ -38,15 +38,14 @@ type Config struct {
 	Database string
 	Username string
 	Password string
+	// Optional search_path to set for all connections in the pool
+	SearchPath string
 
 	// Connection pool parameters
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime int
 	ConnMaxIdletime int
-
-	// Optional search_path to set for all connections in the pool
-	SearchPath string
 }
 
 // NewPostgres opens a *pgxpool.Pool connection to PostgreSQL and configures the connection pool.

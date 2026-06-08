@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
-
 	"github.com/phcp-tech/common-library-golang/env"
 )
 
