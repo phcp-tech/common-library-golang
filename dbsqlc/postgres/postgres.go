@@ -33,13 +33,12 @@ import (
 
 type Config struct {
 	// Database connection parameters
-	Host     string
-	Port     string
-	Database string
-	Username string
-	Password string
-	// Optional search_path to set for all connections in the pool
-	SearchPath string
+	Host       string
+	Port       string
+	Database   string
+	SearchPath string // optional
+	Username   string
+	Password   string
 
 	// Connection pool parameters
 	MaxOpenConns    int
@@ -90,21 +89,16 @@ func NewPostgres(conf *Config) (*pgxpool.Pool, error) {
 	}
 
 	// Log runtime pool configuration
-	slog.Info("Database pool configured", "maxConns", poolConfig.MaxConns, "minConns", poolConfig.MinConns)
+	slog.Info(fmt.Sprintf("Database pool configured - MaxConns: %d, MinConns: %d", poolConfig.MaxConns, poolConfig.MinConns))
 	s := pool.Stat()
-	slog.Info("Database stats",
-		"totalConns", s.TotalConns(),
-		"idleConns", s.IdleConns(),
-		"acquiredConns", s.AcquiredConns(),
-		"maxConns", s.MaxConns(),
-	)
+	slog.Info(fmt.Sprintf("Database stats - TotalConns: %d, IdleConns: %d, AcquiredConns: %d, MaxConns: %d", s.TotalConns(), s.IdleConns(), s.AcquiredConns(), s.MaxConns()))
 
 	// Verify search_path is set correctly on initial connection
 	var path string
 	if err := pool.QueryRow(context.Background(), "show search_path;").Scan(&path); err == nil {
-		slog.Info("Show search_path", "path", path)
+		slog.Info(fmt.Sprintf("Show search_path: %s", path))
 	} else {
-		slog.Error("Failed to show search_path", "error", err)
+		slog.Error(fmt.Sprintf("Failed to show search_path: %s", err.Error()))
 	}
 
 	return pool, nil

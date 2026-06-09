@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -74,11 +75,7 @@ func Authorize() gin.HandlerFunc {
 			c.Next()
 		} else {
 			// Casbin authorization failed, log the details for debugging
-			slog.Warn("Casbin authorization failed",
-				"username", userInfo.Username,
-				"uri", c.Request.RequestURI,
-				"method", c.Request.Method,
-			)
+			slog.Warn(fmt.Sprintf("Casbin authorization failed, username: %s, uri: %s, method: %s", userInfo.Username, c.Request.RequestURI, c.Request.Method))
 			c.AbortWithStatusJSON(http.StatusForbidden, dto.ResponseMessage{Code: http.StatusForbidden, Message: "access forbidden"})
 		}
 	}

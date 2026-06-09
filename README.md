@@ -53,6 +53,7 @@ go test ./... -cover -timeout 60s
 |-------|---------|-------------|-------------|
 | Basic | [`env`](#env--configuration-management) | `.../common-library-golang/env` | TOML config + environment variable loader |
 | Basic | [`log`](#log--structured-logging) | `.../common-library-golang/log` | Structured JSON logger with file rotation and ringbuf |
+| Basic | [`shutdown`](#shutdown--graceful-shutdown) | `.../common-library-golang/shutdown` | Block until OS signal or programmatic trigger, then continue for cleanup |
 | Basic | [`ringbuf`](#ringbuf--ring-buffers) | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
 | Database | [`redis`](#redis--redis-client) | `.../common-library-golang/redis` | Redis client (standalone and cluster) with connection pool and key scan utilities |
@@ -136,6 +137,35 @@ defer log.Close() // flush async buffer and close file on shutdown
 Available log functions: `Debug` / `Info` / `Warn` / `Error` and their `f` (format) and `With` (structured key-value) variants. Log level can be changed at runtime with `SetLevel`.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/log#pkg-examples).
+
+---
+
+## shutdown — Graceful Shutdown
+
+Two primitives for application shutdown coordination:
+
+- **`Wait`** blocks the calling goroutine until an OS signal (`SIGINT`, `SIGTERM`, `SIGHUP`, `SIGQUIT`) or `Trigger` is called. After it returns, the caller performs cleanup and exits.
+- **`Trigger`** unblocks `Wait` programmatically from any goroutine — useful for a `/shutdown` HTTP endpoint or a metrics failure handler. Safe to call multiple times.
+
+```go
+import "github.com/phcp-tech/common-library-golang/shutdown"
+
+// In main: start services, then block until shutdown.
+shutdown.Wait()
+
+// Cleanup runs here (or via defer before Wait).
+runner.Shutdown(ctx)
+```
+
+```go
+// From a /shutdown HTTP endpoint or metrics failure handler.
+shutdown.Trigger()
+```
+
+> **Note:** `Trigger` has no effect when the process is forcibly terminated by the OS
+> (e.g. IDE stop button on Windows calls `TerminateProcess` — no signal is delivered).
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/shutdown#pkg-examples).
 
 ---
 
@@ -659,7 +689,7 @@ runner := httpserver.NewHttpServer(httpserver.Config{
 
 // Start in a goroutine; block until OS signal, then shut down gracefully.
 go func() { _ = runner.Start(ginRouter) }()
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 defer cancel()
 _ = runner.Shutdown(ctx)
 ```

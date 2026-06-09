@@ -15,6 +15,7 @@
 package token
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -173,12 +174,7 @@ func Authenticate() gin.HandlerFunc {
 		kv := strings.Split(tokenstr, " ")
 		if len(kv) == 2 && kv[0] == "Bearer" {
 			if userInfo, err := ParseToken(kv[1]); err != nil {
-				slog.Warn("JWT authenticate failed",
-					"username", userInfo.Username,
-					"uri", c.Request.RequestURI,
-					"method", c.Request.Method,
-					"error", err,
-				)
+				slog.Warn(fmt.Sprintf("JWT authenticate failed, username: %s, uri: %s, method: %s, error: %s", userInfo.Username, c.Request.RequestURI, c.Request.Method, err.Error()))
 				c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ResponseMessage{Code: http.StatusUnauthorized, Message: err.Error()})
 				return
 			} else {

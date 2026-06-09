@@ -26,7 +26,9 @@ const (
 	defaultWriteTimeout      = 60 * time.Second  // maximum duration for writing the full HTTP response; 0 means no limit (required for file downloads)
 	defaultIdleTimeout       = 120 * time.Second // maximum duration to keep an idle keep-alive connection
 	defaultReadHeaderTimeout = 10 * time.Second  // maximum duration for reading the HTTP request headers
-	defaultShutdownTimeout   = 5 * time.Second   // graceful shutdown timeout
+
+	// recommended graceful shutdown timeout for Runner.shutdown ctx; not enforced internally
+	DefaultShutdownTimeout = 10 * time.Second
 )
 
 // Config holds all configuration for the HTTP server runner.
@@ -41,7 +43,6 @@ type Config struct {
 	WriteTimeout      time.Duration // default: 60s; set to 0 for unlimited (file downloads)
 	IdleTimeout       time.Duration // default: 120s
 	ReadHeaderTimeout time.Duration // default: 10s
-	ShutdownTimeout   time.Duration // default: 5s
 }
 
 // resolve returns a copy of cfg with any zero-value duration fields replaced
@@ -58,9 +59,6 @@ func (cfg Config) resolve() Config {
 	}
 	if cfg.ReadHeaderTimeout == 0 {
 		cfg.ReadHeaderTimeout = defaultReadHeaderTimeout
-	}
-	if cfg.ShutdownTimeout == 0 {
-		cfg.ShutdownTimeout = defaultShutdownTimeout
 	}
 	return cfg
 }
