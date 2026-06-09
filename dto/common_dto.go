@@ -33,3 +33,11 @@ type ResponseMessage struct {
 	Message string `json:"message,omitempty"` // omit in success response
 	Data    any    `json:"data,omitempty"`    // omit in failed response
 }
+
+// DataListResp is the standard paginated list response envelope.
+// Both Total and List must not be omitted even when zero/nil so that
+// the frontend can always rely on their presence.
+type DataListResp struct {
+	Total int         `json:"total"` // total number of matching records; must not be omitted
+	List  interface{} `json:"list"`  // slice of result items; must not be omitted
+}
