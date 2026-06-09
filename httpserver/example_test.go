@@ -96,7 +96,6 @@ func ExampleNewHttpServer_customTimeouts() {
 		WriteTimeout:      0, // unlimited — required for file downloads
 		IdleTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
-		ShutdownTimeout:   10 * time.Second,
 	})
 	fmt.Println(runner != nil)
 	// Output:
@@ -116,7 +115,7 @@ func ExampleRunner_Shutdown() {
 	go func() { _ = runner.Start(handler) }()
 
 	// On OS signal (SIGTERM, SIGINT), gracefully drain in-flight requests.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = runner.Shutdown(ctx)
 }

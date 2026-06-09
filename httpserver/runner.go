@@ -31,7 +31,6 @@ type Runner interface {
 	// Returns nil after a graceful shutdown; returns a non-nil error on failure.
 	Start(handler http.Handler) error
 
-	// Shutdown gracefully stops the server, waiting up to the configured
-	// ShutdownTimeout for in-flight requests to complete.
+	// Shutdown gracefully stops the server, waiting for in-flight requests to complete until ctx is cancelled or times out.
 	Shutdown(ctx context.Context) error
 }
