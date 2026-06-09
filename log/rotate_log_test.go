@@ -24,7 +24,7 @@ import (
 
 // TestMain initialises the logger with a temporary log file so that all tests
 // exercise the file-logging code path (asyncWriter + lumberjack).
-// CloseLogFile is called after the test run to drain the ring buffer cleanly.
+// Close is called after the test run to drain the ring buffer cleanly.
 func TestMain(m *testing.M) {
 	f, err := os.CreateTemp("", "logtest-*.log")
 	if err != nil {
@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	// Flush the async ring buffer and release the log file before exit.
-	CloseLogFile()
+	Close()
 	os.Exit(code)
 }
 
@@ -479,15 +479,15 @@ func TestNewLog_Level(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// CloseLogFile – safe to call (must not panic)
+// Close – safe to call (must not panic)
 // -----------------------------------------------------------------------
 
-func TestCloseLogFile_DoesNotPanic(t *testing.T) {
+func TestClose_DoesNotPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
-			t.Errorf("CloseLogFile panicked: %v", r)
+			t.Errorf("Close panicked: %v", r)
 		}
 	}()
-	// CloseLogFile is idempotent; calling it mid-test must not panic.
-	CloseLogFile()
+	// Close is idempotent; calling it mid-test must not panic.
+	Close()
 }

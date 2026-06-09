@@ -130,7 +130,7 @@ log.InitLog(&log.Config{
     MaxAgeDays: 30,
     Compress:   true,
 })
-defer log.CloseLogFile() // flush async buffer and close file on shutdown
+defer log.Close() // flush async buffer and close file on shutdown
 ```
 
 Available log functions: `Debug` / `Info` / `Warn` / `Error` and their `f` (format) and `With` (structured key-value) variants. Log level can be changed at runtime with `SetLevel`.

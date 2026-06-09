@@ -200,10 +200,10 @@ func SetLevel(level string) error {
 	return nil
 }
 
-// CloseLogFile flushes all pending async log entries and closes the underlying
+// Close flushes all pending async log entries and closes the underlying
 // rotating log file. It should be called during graceful shutdown.
 // No-op when logging to stdout.
-func CloseLogFile() {
+func Close() {
 	if logAsyncWriter != nil {
 		logAsyncWriter.Close() // drain ring buffer before closing the file
 	}
