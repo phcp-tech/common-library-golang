@@ -41,3 +41,15 @@ type DataListResp struct {
 	Total int         `json:"total"` // total number of matching records; must not be omitted
 	List  interface{} `json:"list"`  // slice of result items; must not be omitted
 }
+
+// PageParameter holds pagination and sorting parameters for list queries.
+// Page and Limit must always be present (non-omitempty) so that the
+// frontend can rely on their presence in the JSON payload.
+type PageParameter struct {
+	Page      int    `json:"page"`  // current page number (1-based); must not be omitted
+	Limit     int    `json:"limit"` // number of records per page; must not be omitted
+	Sort      string `json:"sort,omitempty"`
+	Direction string `json:"direction,omitempty" validate:"omitempty,oneofci=ASC DESC"` // sort direction: ASC or DESC
+	Charset   string `json:"charset,omitempty"`
+}
+

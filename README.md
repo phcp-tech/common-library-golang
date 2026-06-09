@@ -56,6 +56,8 @@ go test ./... -cover -timeout 60s
 | Basic | [`shutdown`](#shutdown--graceful-shutdown) | `.../common-library-golang/shutdown` | Block until OS signal or programmatic trigger, then continue for cleanup |
 | Basic | [`ringbuf`](#ringbuf--ring-buffers) | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
+| Basic | [`cgroup`](#cgroup--linux-resource-limits) | `.../common-library-golang/cgroup` | Read CPU and memory resource limits from cgroup v2 (Linux only; returns 0 on other platforms) |
+| Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
 | Database | [`redis`](#redis--redis-client) | `.../common-library-golang/redis` | Redis client (standalone and cluster) with connection pool and key scan utilities |
 | Database | [`dbsqlc/postgres`](#dbsqlcpostgres--postgresql-connection-pool) | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
 | Database | [`dbsqlc/sqlite`](#dbsqlcsqlite--sqlite-connection) | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
@@ -326,6 +328,88 @@ Intel® Core™ i7-11850H @ 2.50 GHz · 8 cores / 16 threads · 32 GB RAM · Go 
 - `CMapGen.Replace` with a typed compare function (`ReplaceWithCompare` / `SetDefaultCompare`) is **zero-allocation**; the no-argument `Replace()` fallback uses `fmt.Sprint` internally and produces 3 allocations — always call `SetDefaultCompare` or `SetDefaultStrategy` at construction time.
 - `CMapGen.ReplaceAlways` is the fastest write path (~33.6 M ops/s) when no conditional logic is needed.
 - Under 16-goroutine parallel write contention `CMap.Replace` degrades to ~2.3 M ops/s due to single-key hot-spot; spreading writes across many keys restores throughput.
+
+---
+
+## cgroup — Linux Resource Limits
+
+Reads CPU and memory resource limits from the **cgroup v2** unified hierarchy
+(`/sys/fs/cgroup`). Intended for containerised workloads (Kubernetes, Docker)
+where the process runs inside a cgroup with configured CPU and memory constraints.
+
+On **non-Linux platforms** (macOS, Windows) all functions return `(0, nil)` — no
+cgroup filesystem is available and no error is raised.
+
+| Function | cgroup v2 file | Returns |
+|----------|---------------|---------|
+| `CPULimitMilli()` | `cpu.max` | CPU limit in millicores; 0 = unlimited |
+| `CPURequestMilli()` | `cpu.weight` | CPU request in millicores via weight→shares→mCPU |
+| `MemoryLimitBytes()` | `memory.max` | Memory limit in bytes; 0 = unlimited |
+| `MemoryRequestBytes()` | `memory.low` | Memory soft limit in bytes; 0 = not set |
+
+```go
+import "github.com/phcp-tech/common-library-golang/cgroup"
+
+// Read CPU limit and cap GOMAXPROCS accordingly.
+if milli, err := cgroup.CPULimitMilli(); err == nil && milli > 0 {
+    cpus := milli / 1000
+    if cpus < 1 {
+        cpus = 1
+    }
+    runtime.GOMAXPROCS(cpus)
+}
+
+// Size an in-process cache as 25 % of the container memory limit.
+if limitBytes, err := cgroup.MemoryLimitBytes(); err == nil && limitBytes > 0 {
+    cacheBytes := limitBytes / 4
+    cache.SetMaxSize(cacheBytes)
+}
+```
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/cgroup#pkg-examples).
+
+---
+
+## metrics — Runtime Metrics Snapshot
+
+Collects a one-shot snapshot of key runtime and system metrics as a flat
+`[]NameValue` slice, suitable for a `/metrics` or `/health` HTTP endpoint.
+
+Each call samples **CPU usage over one second** via `gopsutil`, so it is
+intended for periodic polling (e.g. every 10–30 s), not hot-path use.
+
+| Metric name | Description |
+|-------------|-------------|
+| `cpuPercent` | Process CPU usage (%) across all cores, sampled over 1 s |
+| `memorySize` | Resident set size (RSS) in MiB |
+| `threads` | OS thread count |
+| `goroutines` | Live goroutine count |
+| `gomaxprocs` | `runtime.GOMAXPROCS(0)` |
+| `numCPU` | `runtime.NumCPU()` |
+| `cpuRequest` | cgroup v2 CPU request in millicores (0 if not set or non-Linux) |
+| `cpuLimit` | cgroup v2 CPU limit in millicores (0 if unlimited or non-Linux) |
+| `memoryRequest` | cgroup v2 memory soft limit in bytes (0 if not set or non-Linux) |
+| `memoryLimit` | cgroup v2 memory limit in bytes (0 if unlimited or non-Linux) |
+| `age` | Process uptime formatted as `Xd Xh Xm Xs` |
+
+```go
+import "github.com/phcp-tech/common-library-golang/metrics"
+
+// Periodic metrics poll — call from a background goroutine.
+snapshot := metrics.GetMetrics()
+
+// Look up a specific entry.
+for _, nv := range snapshot {
+    if nv.Name == "goroutines" {
+        slog.Info("runtime", "goroutines", nv.Value)
+    }
+}
+
+// Serialize to JSON for a /health endpoint.
+b, _ := json.Marshal(snapshot)
+w.Write(b)
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/metrics#pkg-examples).
 
 ---
 
@@ -679,12 +763,11 @@ runner := httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
 
 // HTTPS with custom timeouts.
 runner := httpserver.NewHttpServer(httpserver.Config{
-    Port:              "8443",
-    CrtFile:           "/etc/ssl/server.crt",
-    KeyFile:           "/etc/ssl/server.key",
-    ReadTimeout:       15 * time.Second,
-    WriteTimeout:      0,               // 0 = unlimited (required for file downloads)
-    ShutdownTimeout:   10 * time.Second,
+    Port:        "8443",
+    CrtFile:     "/etc/ssl/server.crt",
+    KeyFile:     "/etc/ssl/server.key",
+    ReadTimeout: 15 * time.Second,
+    WriteTimeout: 0, // 0 = unlimited (required for file downloads)
 })
 
 // Start in a goroutine; block until OS signal, then shut down gracefully.
