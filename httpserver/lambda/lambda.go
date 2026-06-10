@@ -16,6 +16,7 @@
 // Import this sub-package only in services that run on AWS Lambda — importing
 // it pulls in the AWS Lambda SDK dependencies. Services that run as plain
 // HTTP servers should use the parent httpserver package directly.
+
 package lambda
 
 import (
