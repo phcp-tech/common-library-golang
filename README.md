@@ -2,8 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/phcp-tech/common-library-golang.svg)](https://pkg.go.dev/github.com/phcp-tech/common-library-golang)
 [![LICENSE](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://github.com/phcp-tech/common-library-golang/blob/main/LICENSE)
-![CI](https://github.com/phcp-tech/common-library-golang/actions/workflows/deploy-build-test.yml/badge.svg)
-[![codecov](https://codecov.io/gh/phcp-tech/common-library-golang/branch/main/graph/badge.svg)](https://app.codecov.io/gh/phcp-tech/common-library-golang)
+
 
 Common-library-golang is a collection of functional components used within the PHCP ecosystem, providing numerous components for microservice development, it provides some out-of-the-box functions, such as environment, log, database, etc. To make it more widely available, it is now open-sourced under the Apache license.
 
@@ -54,6 +53,7 @@ go test ./... -cover -timeout 60s
 |-------|---------|-------------|-------------|
 | Basic | [`env`](#env--configuration-management) | `.../common-library-golang/env` | TOML config + environment variable loader |
 | Basic | [`log`](#log--structured-logging) | `.../common-library-golang/log` | Structured JSON logger with file rotation and ringbuf |
+| Basic | [`app`](#app--application-utilities) | `.../common-library-golang/app` | Remote/local IP helpers, health check, and version metadata for HTTP endpoints |
 | Basic | [`shutdown`](#shutdown--graceful-shutdown) | `.../common-library-golang/shutdown` | Block until OS signal or programmatic trigger, then continue for cleanup |
 | Basic | [`ringbuf`](#ringbuf--ring-buffers) | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
@@ -140,6 +140,53 @@ defer log.Close() // flush async buffer and close file on shutdown
 Available log functions: `Debug` / `Info` / `Warn` / `Error` and their `f` (format) and `With` (structured key-value) variants. Log level can be changed at runtime with `SetLevel`.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/log#pkg-examples).
+
+---
+
+## app — Application Utilities
+
+Lightweight helpers for HTTP endpoints: client IP extraction, health check, and
+version metadata. All three functions read from `env.Env()` and require
+`env.InitEnv` to be called once at application startup.
+
+### IP helpers
+
+```go
+import "github.com/phcp-tech/common-library-golang/app"
+
+// Real client IP — inspects X-Forwarded-For → X-Real-IP → RemoteAddr.
+// Returns the first address in X-Forwarded-For when multiple proxies are chained.
+// "::1" is normalised to "127.0.0.1".
+ip := app.GetRemoteIp(req)
+
+// All non-loopback IPv4 addresses on the local machine — useful for logging
+// the pod IP at startup.
+addrs := app.GetLocalIpAddress()
+```
+
+### Health endpoint
+
+```go
+// Returns Health{Name, Status} where Status is 2 when PostgreSQL is reachable,
+// 0 when it is not. Intended for a /health HTTP endpoint.
+h := app.GetHealth()
+if h.Status == 2 {
+    c.JSON(200, h)
+} else {
+    c.JSON(503, h)
+}
+```
+
+### Version endpoint
+
+```go
+// Returns Version{Name, Version, Environment, GoVersion, BuildInfo} populated
+// from env config and the embedded Go build info. Intended for a /version endpoint.
+v := app.GetVersion()
+c.JSON(200, v)
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/app#pkg-examples).
 
 ---
 
