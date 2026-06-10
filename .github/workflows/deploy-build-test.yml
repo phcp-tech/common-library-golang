@@ -51,7 +51,7 @@ jobs:
       # 7. Run unit tests
       - name: Run Unit Tests
         run: |
-          go test ./... -short -cover
+          go test ./... -short -coverprofile=coverage.out -covermode=atomic -timeout 60s
 
       # 8. show build result
       - name: Show build result
@@ -59,3 +59,10 @@ jobs:
           echo "show directory after build:"
           pwd
           ls -alh
+          
+      # 9. Upload coverage report to Codecov    
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out          
