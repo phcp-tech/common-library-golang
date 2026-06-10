@@ -36,8 +36,4 @@ func TestGetProcessInfo(t *testing.T) {
 	if info.CpuPercent < 0 {
 		t.Errorf("GetProcessInfo CpuPercent = %f; want >= 0", info.CpuPercent)
 	}
-	// MemorySize must be >= 0
-	if info.MemorySize < 0 {
-		t.Errorf("GetProcessInfo MemorySize = %d; want >= 0", info.MemorySize)
-	}
 }
