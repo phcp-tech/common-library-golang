@@ -1,0 +1,7 @@
+[app]
+name    = "test-app"
+version = "1.0.0"
+
+[app.env]
+prefix = "TEST_"
+value  = "test"
