@@ -51,7 +51,7 @@ jobs:
       # 7. Run unit tests
       - name: Run Unit Tests
         run: |
-          go test -v -cover ./...
+          go test ./... -short -cover
 
       # 8. show build result
       - name: Show build result

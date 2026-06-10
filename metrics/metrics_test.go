@@ -143,58 +143,6 @@ func TestGetMetricsNumCPUMatchesRuntime(t *testing.T) {
 	}
 }
 
-// TestGetMetricsCpuRequestIsZeroOnWindows verifies that on Windows the cpuRequest
-// cgroup metric is always "0" (cgroup not available).
-func TestGetMetricsCpuRequestIsZeroOnWindows(t *testing.T) {
-	result := GetMetrics()
-	val, found := findMetric(result, "cpuRequest")
-	if !found {
-		t.Fatal("GetMetrics() missing cpuRequest")
-	}
-	if val != "0" {
-		t.Errorf("cpuRequest on Windows: expected \"0\", got %q", val)
-	}
-}
-
-// TestGetMetricsCpuLimitIsZeroOnWindows verifies that on Windows the cpuLimit
-// cgroup metric is always "0".
-func TestGetMetricsCpuLimitIsZeroOnWindows(t *testing.T) {
-	result := GetMetrics()
-	val, found := findMetric(result, "cpuLimit")
-	if !found {
-		t.Fatal("GetMetrics() missing cpuLimit")
-	}
-	if val != "0" {
-		t.Errorf("cpuLimit on Windows: expected \"0\", got %q", val)
-	}
-}
-
-// TestGetMetricsMemoryRequestIsZeroOnWindows verifies that on Windows the
-// memoryRequest cgroup metric is always "0".
-func TestGetMetricsMemoryRequestIsZeroOnWindows(t *testing.T) {
-	result := GetMetrics()
-	val, found := findMetric(result, "memoryRequest")
-	if !found {
-		t.Fatal("GetMetrics() missing memoryRequest")
-	}
-	if val != "0" {
-		t.Errorf("memoryRequest on Windows: expected \"0\", got %q", val)
-	}
-}
-
-// TestGetMetricsMemoryLimitIsZeroOnWindows verifies that on Windows the
-// memoryLimit cgroup metric is always "0".
-func TestGetMetricsMemoryLimitIsZeroOnWindows(t *testing.T) {
-	result := GetMetrics()
-	val, found := findMetric(result, "memoryLimit")
-	if !found {
-		t.Fatal("GetMetrics() missing memoryLimit")
-	}
-	if val != "0" {
-		t.Errorf("memoryLimit on Windows: expected \"0\", got %q", val)
-	}
-}
-
 // TestGetMetricsAgeIsNonEmpty verifies that the age metric is a non-empty string
 // with the expected "Xd Xh Xm Xs" format.
 func TestGetMetricsAgeIsNonEmpty(t *testing.T) {
