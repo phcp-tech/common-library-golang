@@ -27,6 +27,7 @@ func LoadDefault(router *gin.Engine) (httpserver.Runner, error) {
 
 	// start the server asynchronously; pass runner as param to avoid closure races
 	go func(run httpserver.Runner, r *gin.Engine) {
+		// only can recover panics from Start, can not recover errors returned by Start
 		defer func() {
 			if rec := recover(); rec != nil {
 				slog.Error(fmt.Sprintf("panic in http server goroutine: %v\n%s", rec, string(debug.Stack())))
