@@ -3,9 +3,9 @@ package loader
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/phcp-tech/common-library-golang/env"
@@ -13,32 +13,46 @@ import (
 	"github.com/phcp-tech/common-library-golang/httpserver/lambda"
 )
 
-func LoadDefault(router *gin.Engine) (httpserver.Runner, error) {
+const (
+	waitHttpServerStartupTimeout = 100 * time.Millisecond
+)
+
+func LoadFromEnv(router *gin.Engine) (httpserver.Runner, error) {
 	var runner httpserver.Runner
 	// create runner synchronously so returned runner is non-nil
 	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
 		slog.Info("Http server is running under AWS-LAMBDA.")
 		runner = lambda.NewHttpServer()
-	} else {
-		port := env.Env().String("http.server.port")
-		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s.", port))
-		runner = httpserver.NewHttpServer(httpserver.Config{Port: port})
 	}
+
+	// create a http runner.
+	port := env.Env().String("http.server.port")
+	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s.", port))
+	runner = httpserver.NewHttpServer(httpserver.Config{Port: port})
+
+	// serverErr channel is used to capture errors from the server goroutine, including panics and startup errors. Not Exit in this goroutine.
+	serverErr := make(chan error, 1)
 
 	// start the server asynchronously; pass runner as param to avoid closure races
 	go func(run httpserver.Runner, r *gin.Engine) {
+		// only can recover panics from Start, can not recover errors returned by Start
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Error(fmt.Sprintf("panic in http server goroutine: %v\n%s", rec, string(debug.Stack())))
-				return
+				serverErr <- fmt.Errorf("panic in http server goroutine: %v\nstack:%s", rec, string(debug.Stack()))
 			}
 		}()
-
-		if err := run.Start(r); err != nil {
-			slog.Error(fmt.Sprintf("Startup http server failed: %s.", err.Error()))
-			os.Exit(1) // exit if http server fails to start
-		}
+		serverErr <- run.Start(r)
 	}(runner, router)
+
+	// wait briefly for an immediate startup error to avoid a race where
+	// the goroutine hasn't written back an error yet. If no error is
+	// received within the timeout we assume startup succeeded.
+	select {
+	case err := <-serverErr:
+		return runner, err
+	case <-time.After(waitHttpServerStartupTimeout):
+		// no immediate error; continue
+	}
 
 	return runner, nil
 }

@@ -2,8 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/phcp-tech/common-library-golang.svg)](https://pkg.go.dev/github.com/phcp-tech/common-library-golang)
 [![LICENSE](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://github.com/phcp-tech/common-library-golang/blob/main/LICENSE)
-![CI](https://github.com/phcp-tech/common-library-golang/actions/workflows/deploy-build-test.yml/badge.svg)
-[![codecov](https://codecov.io/gh/phcp-tech/common-library-golang/branch/main/graph/badge.svg)](https://app.codecov.io/gh/phcp-tech/common-library-golang)
+
 
 Common-library-golang is a collection of functional components used within the PHCP ecosystem, providing numerous components for microservice development, it provides some out-of-the-box functions, such as environment, log, database, etc. To make it more widely available, it is now open-sourced under the Apache license.
 
@@ -54,6 +53,7 @@ go test ./... -cover -timeout 60s
 |-------|---------|-------------|-------------|
 | Basic | [`env`](#env--configuration-management) | `.../common-library-golang/env` | TOML config + environment variable loader |
 | Basic | [`log`](#log--structured-logging) | `.../common-library-golang/log` | Structured JSON logger with file rotation and ringbuf |
+| Basic | [`app`](#app--application-utilities) | `.../common-library-golang/app` | Application health check, and version metadata |
 | Basic | [`shutdown`](#shutdown--graceful-shutdown) | `.../common-library-golang/shutdown` | Block until OS signal or programmatic trigger, then continue for cleanup |
 | Basic | [`ringbuf`](#ringbuf--ring-buffers) | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
@@ -63,6 +63,7 @@ go test ./... -cover -timeout 60s
 | Database | [`dbsqlc/postgres`](#dbsqlcpostgres--postgresql-connection-pool) | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
 | Database | [`dbsqlc/sqlite`](#dbsqlcsqlite--sqlite-connection) | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
 | Database | [`dbsqlc/sqlite/vfs`](#dbsqlcsqlitevfs--embedded-sqlite-via-vfs) | `.../common-library-golang/dbsqlc/sqlite/vfs` | SQLite over embedded FS via VFS (binary-embedded databases) |
+| Network | [`network`](#network--network-utilities) | `.../common-library-golang/network` | Network utilities helpers |
 | Network | [`auth`](#auth--casbin-rbac-authorisation) | `.../common-library-golang/auth` | Casbin RBAC authorisation middleware for Gin |
 | Network | [`token`](#token--jwt-authentication) | `.../common-library-golang/token` | JWT access/refresh token creation, parsing, and Gin middleware |
 | Network | [`gin`](#gin--gin-engine-factory) | `.../common-library-golang/gin` | Gin engine factory with slog request logging and CORS |
@@ -140,6 +141,37 @@ defer log.Close() // flush async buffer and close file on shutdown
 Available log functions: `Debug` / `Info` / `Warn` / `Error` and their `f` (format) and `With` (structured key-value) variants. Log level can be changed at runtime with `SetLevel`.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/log#pkg-examples).
+
+---
+
+## app — Application Utilities
+
+Lightweight helpers for application health checks, version metadata. All functions read from `env.Env()` and require
+`env.InitEnv` to be called once at application startup.
+
+### Health endpoint
+
+```go
+// Returns Health{Name, Status} where Status is 2 when PostgreSQL is reachable,
+// 0 when it is not. Intended for a /health HTTP endpoint.
+h := app.GetHealth()
+if h.Status == 2 {
+    c.JSON(200, h)
+} else {
+    c.JSON(503, h)
+}
+```
+
+### Version endpoint
+
+```go
+// Returns Version{Name, Version, Environment, GoVersion, BuildInfo} populated
+// from env config and the embedded Go build info. Intended for a /version endpoint.
+v := app.GetVersion()
+c.JSON(200, v)
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/app#pkg-examples).
 
 ---
 
@@ -552,6 +584,25 @@ db := sqlitevfs.Default() // *sql.DB, pass to sqlc-generated Queries
 For cases that require multiple VFS connections, use `New` directly instead of the singleton.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/sqlite/vfs#pkg-examples).
+
+---
+## network — Network Utilities
+
+Helpers for request IP extraction and local interface inspection.
+
+```go
+import "github.com/phcp-tech/common-library-golang/app"
+
+// Real client IP — inspects X-Forwarded-For → X-Real-IP → RemoteAddr.
+// Returns the first address in X-Forwarded-For when multiple proxies are chained.
+// "::1" is normalised to "127.0.0.1".
+ip := app.GetRemoteIp(req)
+
+// All non-loopback IPv4 addresses on the local machine — useful for logging
+// the pod IP at startup.
+addrs := app.GetLocalIpAddress()
+```
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/network#pkg-examples).
 
 ---
 
