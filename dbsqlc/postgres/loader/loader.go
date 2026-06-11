@@ -7,7 +7,7 @@ import (
 	"github.com/phcp-tech/common-library-golang/env"
 )
 
-func LoadDefault() error {
+func LoadFromEnv() error {
 	config := &postgres.Config{
 		// Load database connection parameters from environment variables
 		Host:       env.Env().String("db.host"),

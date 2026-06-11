@@ -8,7 +8,7 @@ import (
 	"github.com/phcp-tech/common-library-golang/redis"
 )
 
-func LoadDefault() error {
+func LoadFromEnv() error {
 	redisCfg := &redis.Config{
 		Clusters: strings.Split(env.Env().String("redis.clusters"), ","),
 		DB:       env.Env().Int("redis.database"),
