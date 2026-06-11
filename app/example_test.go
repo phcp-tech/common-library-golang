@@ -16,56 +16,9 @@ package app_test
 
 import (
 	"fmt"
-	"net/http"
 
 	"github.com/phcp-tech/common-library-golang/app"
 )
-
-// ExampleGetRemoteIp shows how to extract the real client IP in a reverse-proxy
-// environment where the original IP is forwarded via X-Forwarded-For.
-func ExampleGetRemoteIp() {
-	req, _ := http.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Forwarded-For", "203.0.113.5")
-	req.RemoteAddr = "10.0.0.1:1234"
-
-	fmt.Println(app.GetRemoteIp(req))
-	// Output:
-	// 203.0.113.5
-}
-
-// ExampleGetRemoteIp_multipleProxies shows that when X-Forwarded-For contains
-// multiple addresses (set by a chain of proxies), the first (original client)
-// IP is returned.
-func ExampleGetRemoteIp_multipleProxies() {
-	req, _ := http.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Forwarded-For", "203.0.113.5, 10.0.0.2, 10.0.0.3")
-	req.RemoteAddr = "10.0.0.1:1234"
-
-	fmt.Println(app.GetRemoteIp(req))
-	// Output:
-	// 203.0.113.5
-}
-
-// ExampleGetRemoteIp_xRealIP shows the X-Real-IP fallback used by Nginx when
-// X-Forwarded-For is not set.
-func ExampleGetRemoteIp_xRealIP() {
-	req, _ := http.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-Real-IP", "198.51.100.7")
-	req.RemoteAddr = "10.0.0.1:1234"
-
-	fmt.Println(app.GetRemoteIp(req))
-	// Output:
-	// 198.51.100.7
-}
-
-// ExampleGetLocalIpAddress shows how to retrieve all non-loopback IPv4 addresses
-// assigned to the local machine — useful for logging the pod IP at startup.
-func ExampleGetLocalIpAddress() {
-	addrs := app.GetLocalIpAddress()
-	for _, ip := range addrs {
-		fmt.Println(ip)
-	}
-}
 
 // ExampleGetHealth shows the typical usage in a /health HTTP endpoint handler.
 // Requires env.InitEnv to be called at application startup.
