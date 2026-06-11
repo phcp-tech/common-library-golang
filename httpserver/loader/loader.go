@@ -18,17 +18,16 @@ const (
 )
 
 func LoadFromEnv(router *gin.Engine) (httpserver.Runner, error) {
-	var runner httpserver.Runner
 	// create runner synchronously so returned runner is non-nil
 	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
 		slog.Info("Http server is running under AWS-LAMBDA.")
-		runner = lambda.NewHttpServer()
+		return lambda.NewHttpServer(), nil
 	}
 
 	// create a http runner.
 	port := env.Env().String("http.server.port")
 	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s.", port))
-	runner = httpserver.NewHttpServer(httpserver.Config{Port: port})
+	runner := httpserver.NewHttpServer(httpserver.Config{Port: port})
 
 	// serverErr channel is used to capture errors from the server goroutine, including panics and startup errors. Not Exit in this goroutine.
 	serverErr := make(chan error, 1)
