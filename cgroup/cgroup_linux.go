@@ -24,7 +24,6 @@ package cgroup
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
