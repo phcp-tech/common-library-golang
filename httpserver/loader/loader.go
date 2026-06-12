@@ -28,17 +28,6 @@ import (
 // It reads app.runmode and http.server.port, then returns the appropriate Runner.
 // The caller is responsible for starting the server (call Start in a goroutine)
 // and stopping it (call Shutdown on signal).
-//
-// Typical usage in the composition root:
-//
-//	runner := loader.LoadFromEnv()
-//	go func() {
-//	    if err := runner.Start(ginRouter); err != nil {
-//	        slog.Error("Http server stopped with error", "error", err)
-//	    }
-//	}()
-//	shutdown.Wait()
-//	runner.Shutdown(ctx)
 func LoadFromEnv() httpserver.Runner {
 	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
 		slog.Info("Http server is running under AWS-LAMBDA")
