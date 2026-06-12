@@ -38,15 +38,14 @@
 // (application.go) is the only place that needs to know which runner to create.
 // All other code just calls runner.Start / runner.Shutdown:
 //
-//	var runner httpserver.Runner
-//	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
-//	    runner = lambdarunner.NewHttpServer()            // Lambda mode
-//	} else {
-//	    runner = httpserver.NewHttpServer(httpserver.Config{
-//	        Port: env.Env().String("server.port"),
-//	    })                                     // HTTP mode
-//	}
-//	go func() { _ = runner.Start(ginRouter) }()
+//	runner := httpserver.NewHttpServer(httpserver.Config{
+//	    Port: env.Env().String("server.port"),
+//	})
+//	go func() {
+//	    if err := runner.Start(ginRouter); err != nil {
+//	        slog.Error("Http server stopped with error", "error", err)
+//	    }
+//	}()
 //	// … wait for OS signal …
 //	_ = runner.Shutdown(ctx)
 package httpserver_test
@@ -102,8 +101,35 @@ func ExampleNewHttpServer_customTimeouts() {
 	// true
 }
 
+// ExampleRunner_Start shows how Start is used in the standard server loop.
+// Start blocks until the server is stopped by a Shutdown call or a fatal error.
+// It must be called in a goroutine so the rest of the application can continue.
+// Start returns nil after a clean shutdown triggered by Shutdown().
+func ExampleRunner_Start() {
+	runner := httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- runner.Start(handler)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = runner.Shutdown(ctx)
+
+	if err := <-startErr; err != nil {
+		fmt.Println("server error:", err)
+	}
+}
+
 // ExampleRunner_Shutdown shows the recommended composition-root pattern:
 // start the server in a goroutine and shut it down gracefully on signal.
+// Shutdown waits for in-flight requests to complete until ctx is cancelled.
+// Calling Shutdown before Start is safe and is a no-op.
 func ExampleRunner_Shutdown() {
 	runner := httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
 
@@ -111,10 +137,8 @@ func ExampleRunner_Shutdown() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Start in a background goroutine; it blocks until Shutdown is called.
 	go func() { _ = runner.Start(handler) }()
 
-	// On OS signal (SIGTERM, SIGINT), gracefully drain in-flight requests.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = runner.Shutdown(ctx)
