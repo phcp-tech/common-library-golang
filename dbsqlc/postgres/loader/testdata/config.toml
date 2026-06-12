@@ -1,0 +1,10 @@
+[app.env]
+prefix = "TEST_"
+
+[db]
+host     = "127.0.0.1"
+port     = "1"
+name     = "testdb"
+schema   = "public"
+username = "testuser"
+password = "testpass"

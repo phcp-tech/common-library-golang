@@ -1,58 +1,51 @@
+// Copyright(C) 2019-2026 PHCP Technologies. All rights reserved.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+// 	http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package loader
 
 import (
 	"fmt"
 	"log/slog"
-	"runtime/debug"
 	"strings"
-	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/phcp-tech/common-library-golang/env"
 	"github.com/phcp-tech/common-library-golang/httpserver"
 	"github.com/phcp-tech/common-library-golang/httpserver/lambda"
 )
 
-const (
-	waitHttpServerStartupTimeout = 100 * time.Millisecond
-)
-
-func LoadFromEnv(router *gin.Engine) (httpserver.Runner, error) {
-	var runner httpserver.Runner
-	// create runner synchronously so returned runner is non-nil
+// LoadFromEnv creates an HTTP Runner from the koanf env singleton.
+// It reads app.runmode and http.server.port, then returns the appropriate Runner.
+// The caller is responsible for starting the server (call Start in a goroutine)
+// and stopping it (call Shutdown on signal).
+//
+// Typical usage in the composition root:
+//
+//	runner := loader.LoadFromEnv()
+//	go func() {
+//	    if err := runner.Start(ginRouter); err != nil {
+//	        slog.Error("Http server stopped with error", "error", err)
+//	    }
+//	}()
+//	shutdown.Wait()
+//	runner.Shutdown(ctx)
+func LoadFromEnv() httpserver.Runner {
 	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
-		slog.Info("Http server is running under AWS-LAMBDA.")
-		runner = lambda.NewHttpServer()
+		slog.Info("Http server is running under AWS-LAMBDA")
+		return lambda.NewHttpServer()
 	}
 
-	// create a http runner.
 	port := env.Env().String("http.server.port")
-	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s.", port))
-	runner = httpserver.NewHttpServer(httpserver.Config{Port: port})
-
-	// serverErr channel is used to capture errors from the server goroutine, including panics and startup errors. Not Exit in this goroutine.
-	serverErr := make(chan error, 1)
-
-	// start the server asynchronously; pass runner as param to avoid closure races
-	go func(run httpserver.Runner, r *gin.Engine) {
-		// only can recover panics from Start, can not recover errors returned by Start
-		defer func() {
-			if rec := recover(); rec != nil {
-				serverErr <- fmt.Errorf("panic in http server goroutine: %v\nstack:%s", rec, string(debug.Stack()))
-			}
-		}()
-		serverErr <- run.Start(r)
-	}(runner, router)
-
-	// wait briefly for an immediate startup error to avoid a race where
-	// the goroutine hasn't written back an error yet. If no error is
-	// received within the timeout we assume startup succeeded.
-	select {
-	case err := <-serverErr:
-		return runner, err
-	case <-time.After(waitHttpServerStartupTimeout):
-		// no immediate error; continue
-	}
-
-	return runner, nil
+	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", port))
+	return httpserver.NewHttpServer(httpserver.Config{Port: port})
 }
