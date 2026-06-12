@@ -107,7 +107,7 @@ func InitGin(corsOrigins []string) *gin.Engine {
 		}
 		router.Use(cors.New(corsconfig))
 	} else {
-		slog.Info("CORS is not configured.")
+		slog.Info("CORS is not configured")
 	}
 
 	return router

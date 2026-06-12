@@ -50,7 +50,8 @@ func TestSingleton_Lifecycle(t *testing.T) {
 		t.Skip("singleton already initialised before lifecycle test ran")
 	}
 
-	// InitDefault with an unreachable host: pgxpool.NewWithConfig is lazy, succeeds.
+	// InitDefault with an unreachable host: NewPostgres performs an eager
+	// connectivity check (show search_path), so it returns an error immediately.
 	err := postgres.InitDefault(&postgres.Config{
 		Host:            "127.0.0.1",
 		Port:            "19997",
@@ -62,15 +63,17 @@ func TestSingleton_Lifecycle(t *testing.T) {
 		ConnMaxLifetime: 60,
 		ConnMaxIdletime: 10,
 	})
-	if err != nil {
-		t.Fatalf("InitDefault error = %v (pool creation should not require a live server)", err)
+	if err == nil {
+		t.Fatal("InitDefault should return an error when the database is unreachable")
 	}
 
-	if postgres.Default() == nil {
-		t.Fatal("Default() is nil after successful InitDefault")
+	// After a failed InitDefault the singleton remains nil.
+	if postgres.Default() != nil {
+		t.Fatal("Default() should be nil after a failed InitDefault")
 	}
 
-	// Second InitDefault is a no-op (sync.Once).
+	// Second InitDefault is a no-op (sync.Once) — returns nil even though the
+	// first call failed; the instance stays nil.
 	if err := postgres.InitDefault(&postgres.Config{
 		Host:            "127.0.0.1",
 		Port:            "19997",
@@ -82,13 +85,15 @@ func TestSingleton_Lifecycle(t *testing.T) {
 		ConnMaxLifetime: 60,
 		ConnMaxIdletime: 10,
 	}); err != nil {
-		t.Errorf("second InitDefault should return nil; got %v", err)
+		t.Errorf("second InitDefault should return nil (sync.Once no-op); got %v", err)
 	}
 }
 
-// ─── NewPostgres — pool creation is lazy, no live server required ────────────
+// ─── NewPostgres — eager connectivity check ───────────────────────────────────
 
-func TestNewPostgres_LazyPool(t *testing.T) {
+func TestNewPostgres_EagerCheck_ReturnsError(t *testing.T) {
+	// NewPostgres issues "show search_path" to verify connectivity.
+	// With an unreachable host it returns a non-nil error immediately.
 	pool, err := postgres.NewPostgres(&postgres.Config{
 		Host:            "127.0.0.1",
 		Port:            "19998",
@@ -100,11 +105,11 @@ func TestNewPostgres_LazyPool(t *testing.T) {
 		ConnMaxLifetime: 60,
 		ConnMaxIdletime: 10,
 	})
-	if err != nil {
-		t.Fatalf("NewPostgres error = %v (pool creation should not require a live server)", err)
+	if err == nil {
+		pool.Close()
+		t.Fatal("NewPostgres should return an error when the database is unreachable")
 	}
-	if pool == nil {
-		t.Fatal("NewPostgres returned nil pool")
+	if pool != nil {
+		t.Fatal("NewPostgres should return nil pool on error")
 	}
-	pool.Close()
 }

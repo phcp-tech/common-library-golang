@@ -93,13 +93,16 @@ func NewPostgres(conf *Config) (*pgxpool.Pool, error) {
 	s := pool.Stat()
 	slog.Info(fmt.Sprintf("Database stats - TotalConns: %d, IdleConns: %d, AcquiredConns: %d, MaxConns: %d", s.TotalConns(), s.IdleConns(), s.AcquiredConns(), s.MaxConns()))
 
-	// Verify search_path is set correctly on initial connection
+	// Verify connectivity by issuing a lightweight query.
+	// This converts pgxpool's lazy-connect behaviour into an eager check:
+	// if the database is unreachable the caller receives an error immediately
+	// rather than discovering it on the first real query.
 	var path string
-	if err := pool.QueryRow(context.Background(), "show search_path;").Scan(&path); err == nil {
-		slog.Info(fmt.Sprintf("Show search_path: %s", path))
-	} else {
-		slog.Error(fmt.Sprintf("Failed to show search_path: %s", err.Error()))
+	if err := pool.QueryRow(context.Background(), "show search_path;").Scan(&path); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("show search_path failed: %w", err)
 	}
+	slog.Info(fmt.Sprintf("Show search_path: %s", path))
 
 	return pool, nil
 }

@@ -21,32 +21,28 @@ import (
 	"github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
 )
 
-// ExampleNewPostgres shows that pool creation is lazy: pgxpool.NewWithConfig does
-// not establish any connections at creation time, so no live PostgreSQL server is
-// required. Connections are acquired on first use.
-// Zero-value pool fields fall back to the dbsqlc package defaults
+// ExampleNewPostgres shows the typical usage of NewPostgres.
+// NewPostgres performs an eager connectivity check (show search_path) so callers
+// discover unreachable databases immediately at startup rather than on the first
+// real query. Zero-value pool fields fall back to the dbsqlc package defaults
 // (MaxOpenConns=100, MaxIdleConns=25, ConnMaxLifetime=60min, ConnMaxIdletime=10min).
 func ExampleNewPostgres() {
-	pool, err := postgres.NewPostgres(&postgres.Config{
+	// With an unreachable host the connectivity check fails and an error is returned.
+	_, err := postgres.NewPostgres(&postgres.Config{
 		Host:     "127.0.0.1",
 		Port:     "19999",
 		Database: "mydb",
 		Username: "user",
 		Password: "pass",
 	})
-	if err != nil {
-		fmt.Println("error:", err)
-		return
-	}
-	defer pool.Close()
-	fmt.Println("pool created")
+	fmt.Println(err != nil) // true — connectivity check failed
 	// Output:
-	// pool created
+	// true
 }
 
 // ExampleNewPostgres_customPool shows how to override the default connection pool settings.
 func ExampleNewPostgres_customPool() {
-	pool, err := postgres.NewPostgres(&postgres.Config{
+	_, err := postgres.NewPostgres(&postgres.Config{
 		Host:            "127.0.0.1",
 		Port:            "19999",
 		Database:        "mydb",
@@ -58,20 +54,18 @@ func ExampleNewPostgres_customPool() {
 		ConnMaxLifetime: 30, // minutes
 		ConnMaxIdletime: 5,  // minutes
 	})
-	if err != nil {
-		fmt.Println("error:", err)
-		return
-	}
-	defer pool.Close()
-	fmt.Println("pool created")
+	fmt.Println(err != nil) // true — connectivity check failed
 	// Output:
-	// pool created
+	// true
 }
 
 // ExampleInitDefault shows the singleton pattern for the default PostgreSQL pool.
 // Call InitDefault once at application startup; subsequent calls are silently
-// ignored (sync.Once). After a successful call, Default returns the initialised
-// *pgxpool.Pool which can be passed directly to sqlc-generated Queries.
+// ignored (sync.Once).
+//
+// In this example the singleton was already consumed by a prior test in this
+// binary, so InitDefault is a no-op and returns nil. Default() returns nil
+// because the first initialisation attempt failed (unreachable host).
 func ExampleInitDefault() {
 	err := postgres.InitDefault(&postgres.Config{
 		Host:            "127.0.0.1",
@@ -84,9 +78,9 @@ func ExampleInitDefault() {
 		ConnMaxLifetime: 60,
 		ConnMaxIdletime: 10,
 	})
-	fmt.Println(err)
-	fmt.Println(postgres.Default() != nil)
+	fmt.Println(err != nil)                // false — sync.Once no-op, returns nil
+	fmt.Println(postgres.Default() != nil) // false — first init failed, instance nil
 	// Output:
-	// <nil>
-	// true
+	// false
+	// false
 }
