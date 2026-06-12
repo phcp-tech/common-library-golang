@@ -76,7 +76,6 @@ func CPULimitMilli() (int, error) {
 		return 0, fmt.Errorf("unexpected cpu.max format: %q", string(data))
 	}
 	if fields[0] == "max" {
-		slog.Debug("cgroup v2 cpu limit: unlimited")
 		return 0, nil
 	}
 	quota, err1 := strconv.Atoi(fields[0])
@@ -88,7 +87,6 @@ func CPULimitMilli() (int, error) {
 		return 0, fmt.Errorf("cpu.max period is zero or negative")
 	}
 	mcpu := int(float64(quota) / float64(period) * 1000.0)
-	slog.Debug("cgroup v2 cpu limit", "mCPU", mcpu)
 	return mcpu, nil
 }
 
@@ -125,7 +123,6 @@ func CPURequestMilli() (int, error) {
 		shares = 262144
 	}
 	mcpu := int((shares*1000 + 512) / 1024)
-	slog.Debug("cgroup v2 cpu request", "weight", weight, "mCPU", mcpu)
 	return mcpu, nil
 }
 
@@ -142,14 +139,12 @@ func MemoryLimitBytes() (int64, error) {
 	}
 	s := strings.TrimSpace(string(data))
 	if s == "max" {
-		slog.Debug("cgroup v2 memory limit: unlimited")
 		return 0, nil
 	}
 	limit, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse memory.max: %w", err)
 	}
-	slog.Debug("cgroup v2 memory limit", "bytes", limit)
 	return limit, nil
 }
 
@@ -166,13 +161,11 @@ func MemoryRequestBytes() (int64, error) {
 	}
 	s := strings.TrimSpace(string(data))
 	if s == "0" || s == "max" {
-		slog.Debug("cgroup v2 memory request: no soft limit")
 		return 0, nil
 	}
 	low, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse memory.low: %w", err)
 	}
-	slog.Debug("cgroup v2 memory request", "bytes", low)
 	return low, nil
 }
