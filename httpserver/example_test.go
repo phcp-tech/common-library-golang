@@ -105,41 +105,54 @@ func ExampleNewHttpServer_customTimeouts() {
 // Start blocks until the server is stopped by a Shutdown call or a fatal error.
 // It must be called in a goroutine so the rest of the application can continue.
 // Start returns nil after a clean shutdown triggered by Shutdown().
+// Port "0" lets the OS assign a free port automatically.
 func ExampleRunner_Start() {
-	runner := httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
+	runner := httpserver.NewHttpServer(httpserver.Config{Port: "0"})
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	startErr := make(chan error, 1)
-	go func() {
-		startErr <- runner.Start(handler)
-	}()
+	go func() { startErr <- runner.Start(handler) }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Wait briefly for the server to bind, then shut it down.
+	time.Sleep(50 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = runner.Shutdown(ctx)
 
 	if err := <-startErr; err != nil {
-		fmt.Println("server error:", err)
+		fmt.Println("error:", err)
+		return
 	}
+	fmt.Println("stopped cleanly")
+	// Output:
+	// stopped cleanly
 }
 
 // ExampleRunner_Shutdown shows the recommended composition-root pattern:
 // start the server in a goroutine and shut it down gracefully on signal.
 // Shutdown waits for in-flight requests to complete until ctx is cancelled.
-// Calling Shutdown before Start is safe and is a no-op.
+// Port "0" lets the OS assign a free port automatically.
 func ExampleRunner_Shutdown() {
-	runner := httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
+	runner := httpserver.NewHttpServer(httpserver.Config{Port: "0"})
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	go func() { _ = runner.Start(handler) }()
+	startErr := make(chan error, 1)
+	go func() { startErr <- runner.Start(handler) }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Wait briefly for the server to bind, then shut it down.
+	time.Sleep(50 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = runner.Shutdown(ctx)
+
+	err := runner.Shutdown(ctx)
+	fmt.Println(err)
+	<-startErr // wait for the server goroutine to finish
+	// Output:
+	// <nil>
 }

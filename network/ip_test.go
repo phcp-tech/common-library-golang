@@ -95,6 +95,160 @@ func TestGetRemoteIp(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// Int2IpWithLittleEndian / Int2IpWithBigEndian
+// -----------------------------------------------------------------------
+
+func TestInt2IpWithLittleEndian(t *testing.T) {
+	tests := []struct {
+		name  string
+		input uint32
+		want  string
+	}{
+		{"zero returns empty", 0, ""},
+		{"1.2.3.4 little-endian", 0x04030201, "1.2.3.4"},
+		{"10.0.0.1 little-endian", 0x0100000A, "10.0.0.1"},
+		{"127.0.0.1 little-endian", 0x0100007F, "127.0.0.1"},
+		{"255.255.255.255 little-endian", 0xFFFFFFFF, "255.255.255.255"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Int2IpWithLittleEndian(tc.input)
+			if got != tc.want {
+				t.Errorf("Int2IpWithLittleEndian(%d) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInt2IpWithBigEndian(t *testing.T) {
+	tests := []struct {
+		name  string
+		input uint32
+		want  string
+	}{
+		{"zero returns empty", 0, ""},
+		{"1.2.3.4 big-endian", 0x01020304, "1.2.3.4"},
+		{"10.0.0.1 big-endian", 0x0A000001, "10.0.0.1"},
+		{"127.0.0.1 big-endian", 0x7F000001, "127.0.0.1"},
+		{"255.255.255.255 big-endian", 0xFFFFFFFF, "255.255.255.255"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Int2IpWithBigEndian(tc.input)
+			if got != tc.want {
+				t.Errorf("Int2IpWithBigEndian(%d) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// -----------------------------------------------------------------------
+// Ip2IntWithLittleEndian / Ip2IntWithBigEndian
+// -----------------------------------------------------------------------
+
+func TestIp2IntWithLittleEndian(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  uint32
+	}{
+		{"empty returns 0", "", 0},
+		{"invalid returns 0", "not-an-ip", 0},
+		{"IPv6 returns 0", "::1", 0},
+		{"1.2.3.4", "1.2.3.4", 0x04030201},
+		{"10.0.0.1", "10.0.0.1", 0x0100000A},
+		{"127.0.0.1", "127.0.0.1", 0x0100007F},
+		{"255.255.255.255", "255.255.255.255", 0xFFFFFFFF},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Ip2IntWithLittleEndian(tc.input)
+			if got != tc.want {
+				t.Errorf("Ip2IntWithLittleEndian(%q) = %d (0x%X), want %d (0x%X)", tc.input, got, got, tc.want, tc.want)
+			}
+		})
+	}
+}
+
+func TestIp2IntWithBigEndian(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  uint32
+	}{
+		{"empty returns 0", "", 0},
+		{"invalid returns 0", "not-an-ip", 0},
+		{"IPv6 returns 0", "::1", 0},
+		{"1.2.3.4", "1.2.3.4", 0x01020304},
+		{"10.0.0.1", "10.0.0.1", 0x0A000001},
+		{"127.0.0.1", "127.0.0.1", 0x7F000001},
+		{"255.255.255.255", "255.255.255.255", 0xFFFFFFFF},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Ip2IntWithBigEndian(tc.input)
+			if got != tc.want {
+				t.Errorf("Ip2IntWithBigEndian(%q) = %d (0x%X), want %d (0x%X)", tc.input, got, got, tc.want, tc.want)
+			}
+		})
+	}
+}
+
+// -----------------------------------------------------------------------
+// Roundtrip: Ip2Int → Int2Ip
+// -----------------------------------------------------------------------
+
+func TestRoundtrip_LittleEndian(t *testing.T) {
+	ips := []string{"1.2.3.4", "10.0.0.1", "192.168.1.100", "255.255.255.255"}
+	for _, ip := range ips {
+		n := Ip2IntWithLittleEndian(ip)
+		got := Int2IpWithLittleEndian(n)
+		if got != ip {
+			t.Errorf("little-endian roundtrip %q → %d → %q", ip, n, got)
+		}
+	}
+}
+
+func TestRoundtrip_BigEndian(t *testing.T) {
+	ips := []string{"1.2.3.4", "10.0.0.1", "192.168.1.100", "255.255.255.255"}
+	for _, ip := range ips {
+		n := Ip2IntWithBigEndian(ip)
+		got := Int2IpWithBigEndian(n)
+		if got != ip {
+			t.Errorf("big-endian roundtrip %q → %d → %q", ip, n, got)
+		}
+	}
+}
+
+// -----------------------------------------------------------------------
+// IsValidAddr
+// -----------------------------------------------------------------------
+
+func TestIsValidAddr(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"valid IP with port", "192.168.1.1:8080", true},
+		{"valid IP without port", "192.168.1.1", true},
+		{"loopback with port", "127.0.0.1:3306", true},
+		{"loopback without port", "127.0.0.1", true},
+		{"invalid IP", "999.999.999.999", false},
+		{"empty string", "", false},
+		{"port only", ":8080", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsValidAddr(tc.input)
+			if got != tc.want {
+				t.Errorf("IsValidAddr(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// -----------------------------------------------------------------------
 // GetLocalIpAddress
 // -----------------------------------------------------------------------
 
