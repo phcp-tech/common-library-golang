@@ -589,20 +589,56 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 ---
 ## network — Network Utilities
 
-Helpers for request IP extraction and local interface inspection.
+Helpers for request IP extraction, local interface inspection, and IPv4 ↔ uint32 conversion.
+
+### IP address helpers
 
 ```go
-import "github.com/phcp-tech/common-library-golang/app"
+import "github.com/phcp-tech/common-library-golang/network"
 
 // Real client IP — inspects X-Forwarded-For → X-Real-IP → RemoteAddr.
 // Returns the first address in X-Forwarded-For when multiple proxies are chained.
 // "::1" is normalised to "127.0.0.1".
-ip := app.GetRemoteIp(req)
+ip := network.GetRemoteIp(req)
 
-// All non-loopback IPv4 addresses on the local machine — useful for logging
-// the pod IP at startup.
-addrs := app.GetLocalIpAddress()
+// All non-loopback IPv4 addresses on the local machine.
+addrs := network.GetLocalIpAddress()
 ```
+
+### IPv4 ↔ uint32 conversion
+
+Two byte orders are supported:
+
+| Function | Byte order | Typical use |
+|----------|-----------|-------------|
+| `Ip2IntWithBigEndian` | Big-endian (network order) | Standard TCP/IP, databases |
+| `Int2IpWithBigEndian` | Big-endian | Same as above |
+| `Ip2IntWithLittleEndian` | Little-endian | MT4 / MT5 trading platforms |
+| `Int2IpWithLittleEndian` | Little-endian | Same as above |
+
+```go
+// Big-endian (network byte order): "1.2.3.4" → 0x01020304
+n := network.Ip2IntWithBigEndian("1.2.3.4")   // → 16909060
+ip := network.Int2IpWithBigEndian(0x01020304)  // → "1.2.3.4"
+
+// Little-endian (MT4/MT5 format): "1.2.3.4" → 0x04030201
+n := network.Ip2IntWithLittleEndian("1.2.3.4")   // → 67305985
+ip := network.Int2IpWithLittleEndian(0x04030201)  // → "1.2.3.4"
+
+// Both return 0 / "" for empty, invalid, or IPv6 input.
+```
+
+### Address validation
+
+```go
+// IsValidAddr checks if the string is a valid IP address (with or without port)
+// or a resolvable hostname.
+network.IsValidAddr("192.168.1.1:8080") // true
+network.IsValidAddr("192.168.1.1")      // true
+network.IsValidAddr("example.com:443")  // true (DNS lookup)
+network.IsValidAddr("999.999.999.999")  // false
+```
+
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/network#pkg-examples).
 
 ---

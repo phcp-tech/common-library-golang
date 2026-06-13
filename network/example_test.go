@@ -66,3 +66,55 @@ func ExampleGetLocalIpAddress() {
 		fmt.Println(ip)
 	}
 }
+
+// ExampleInt2IpWithLittleEndian converts a little-endian uint32 to a dotted-decimal
+// IPv4 string. This format is used by MT4/MT5 trading platforms.
+func ExampleInt2IpWithLittleEndian() {
+	fmt.Println(network.Int2IpWithLittleEndian(0x04030201)) // 0x04030201 = 1.2.3.4
+	fmt.Println(network.Int2IpWithLittleEndian(0))          // 0 → empty
+	// Output:
+	// 1.2.3.4
+	//
+}
+
+// ExampleInt2IpWithBigEndian converts a big-endian uint32 (network byte order)
+// to a dotted-decimal IPv4 string.
+func ExampleInt2IpWithBigEndian() {
+	fmt.Println(network.Int2IpWithBigEndian(0x01020304)) // 0x01020304 = 1.2.3.4
+	fmt.Println(network.Int2IpWithBigEndian(0x7F000001)) // 0x7F000001 = 127.0.0.1
+	// Output:
+	// 1.2.3.4
+	// 127.0.0.1
+}
+
+// ExampleIp2IntWithLittleEndian converts a dotted-decimal IPv4 string to a
+// little-endian uint32. Returns 0 for empty or invalid input.
+func ExampleIp2IntWithLittleEndian() {
+	fmt.Printf("0x%X\n", network.Ip2IntWithLittleEndian("1.2.3.4"))
+	fmt.Println(network.Ip2IntWithLittleEndian(""))
+	// Output:
+	// 0x4030201
+	// 0
+}
+
+// ExampleIp2IntWithBigEndian converts a dotted-decimal IPv4 string to a
+// big-endian uint32 (network byte order). Returns 0 for empty or invalid input.
+func ExampleIp2IntWithBigEndian() {
+	fmt.Printf("0x%X\n", network.Ip2IntWithBigEndian("1.2.3.4"))
+	fmt.Printf("0x%X\n", network.Ip2IntWithBigEndian("127.0.0.1"))
+	// Output:
+	// 0x1020304
+	// 0x7F000001
+}
+
+// ExampleIsValidAddr checks whether a string is a valid IP address or
+// resolvable hostname, with or without a port.
+func ExampleIsValidAddr() {
+	fmt.Println(network.IsValidAddr("192.168.1.1:8080")) // IP with port
+	fmt.Println(network.IsValidAddr("192.168.1.1"))      // IP without port
+	fmt.Println(network.IsValidAddr("999.999.999.999"))  // invalid
+	// Output:
+	// true
+	// true
+	// false
+}

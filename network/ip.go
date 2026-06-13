@@ -15,6 +15,7 @@
 package network
 
 import (
+	"encoding/binary"
 	"net"
 	"net/http"
 	"strings"
@@ -61,4 +62,115 @@ func GetLocalIpAddress() (ipaddr []string) {
 		}
 	}
 	return ipaddr
+}
+
+// Int2IpWithLittleEndian converts a uint32 IP address to string format in little-endian format
+func Int2IpWithLittleEndian(ipInt uint32) string {
+	// Handle special case when IP is 0
+	if ipInt == 0 {
+		return ""
+	}
+
+	// Convert uint32 to 4 bytes (IPv4)
+	// MT4 stores IP addresses in little-endian byte order
+	byte1 := ipInt & 0xFF
+	byte2 := (ipInt >> 8) & 0xFF
+	byte3 := (ipInt >> 16) & 0xFF
+	byte4 := (ipInt >> 24) & 0xFF
+
+	// Create IPv4 address and convert to string
+	ip := net.IPv4(byte(byte1), byte(byte2), byte(byte3), byte(byte4))
+	return ip.String()
+}
+
+// Int2IpWithBigEndian converts a uint32 IP address to string format in big-endian format
+func Int2IpWithBigEndian(ipInt uint32) string {
+	// Handle special case when IP is 0
+	if ipInt == 0 {
+		return ""
+	}
+
+	// Convert uint32 to 4 bytes (IPv4)
+	// Big-endian byte order - most significant byte first
+	byte1 := (ipInt >> 24) & 0xFF
+	byte2 := (ipInt >> 16) & 0xFF
+	byte3 := (ipInt >> 8) & 0xFF
+	byte4 := ipInt & 0xFF
+
+	// Create IPv4 address and convert to string
+	ip := net.IPv4(byte(byte1), byte(byte2), byte(byte3), byte(byte4))
+	return ip.String()
+}
+
+// Ip2IntWithLittleEndian converts an IP address string to uint32 in little-endian format
+func Ip2IntWithLittleEndian(ipStr string) uint32 {
+	// Handle special case when IP string is empty
+	if ipStr == "" {
+		return 0
+	}
+
+	// Parse IP string to net.IP
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return 0
+	}
+
+	// Convert to IPv4 (4 bytes)
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+
+	// Convert to uint32 using little-endian byte order
+	// Little-endian: least significant byte first
+	//return uint32(ip[0]) | (uint32(ip[1]) << 8) | (uint32(ip[2]) << 16) | (uint32(ip[3]) << 24)
+	return binary.LittleEndian.Uint32(ip)
+}
+
+// Ip2IntWithBigEndian converts an IP address string to uint32 in big-endian format
+func Ip2IntWithBigEndian(ipStr string) uint32 {
+	// Handle special case when IP string is empty
+	if ipStr == "" {
+		return 0
+	}
+
+	// Parse IP string to net.IP
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return 0
+	}
+
+	// Convert to IPv4 (4 bytes)
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+
+	// Convert to uint32 using big-endian byte order
+	// Big-endian: most significant byte first
+	//return (uint32(ip[0]) << 24) | (uint32(ip[1]) << 16) | (uint32(ip[2]) << 8) | uint32(ip[3])
+	return binary.BigEndian.Uint32(ip)
+}
+
+// IsValidAddr checks if the given string is a valid IP address with port or resolvable domain name with port
+func IsValidAddr(ipStr string) bool {
+	// split host and port
+	host, _, err := net.SplitHostPort(ipStr)
+	if err != nil {
+		// if there is no port, use the whole string as host
+		host = ipStr
+	}
+
+	// Check if it's a valid IP address
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Not an IP, try DNS lookup to validate domain name
+		_, err := net.LookupHost(host)
+		if err != nil {
+			return false
+		}
+		return true
+	}
+
+	return true
 }
