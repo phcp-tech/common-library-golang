@@ -12,29 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package loader_test
+package component_test
 
 import (
 	"fmt"
 
-	"github.com/phcp-tech/common-library-golang/httpserver/loader"
+	envComp "github.com/phcp-tech/common-library-golang/env/component"
 )
 
-// ExampleLoadFromEnv shows how LoadFromEnv is used in the composition root.
-// It reads app.runmode and http.server.port from the koanf env singleton and
-// returns the appropriate Runner. The caller owns the goroutine and shutdown:
-//
-//	runner := loader.LoadFromEnv()
-//	go func() {
-//	    if err := runner.Start(ginRouter); err != nil {
-//	        slog.Error("Http server stopped with error", "error", err)
-//	    }
-//	}()
-//	shutdown.Wait()
-//	runner.Shutdown(ctx)
-func ExampleLoadFromEnv() {
-	runner := loader.LoadFromEnv()
-	fmt.Println(runner != nil)
+// ExampleComponent shows how env.Component() is used as the first argument to
+// bootstrap.New(). It loads the TOML config file into the koanf singleton so
+// that env.Env() is available to all subsequent components.
+func ExampleComponent() {
+	c := envComp.Component("testdata/config.toml")
+	fmt.Println(c != nil)
+	fmt.Println(c.Name())
 	// Output:
 	// true
+	// env
 }
