@@ -1,2 +1,7 @@
 [app.env]
 prefix = "TEST_"
+value  = "dev"
+
+[cors.allow.origins]
+dev  = ["http://localhost:3000"]
+prod = ["https://example.com"]

@@ -12,31 +12,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package component provides env lifecycle integration for bootstrap.
+// Package component provides Gin lifecycle integration for bootstrap.
 package component
 
 import (
-	"embed"
+	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/phcp-tech/common-library-golang/bootstrap"
 	"github.com/phcp-tech/common-library-golang/env"
+	libGin "github.com/phcp-tech/common-library-golang/gin"
 )
 
-// Component loads the TOML config file into the koanf singleton.
-// Pass an embedded FS for single-binary deployments; omit it to load from disk.
-//
-// Close is a no-op: the koanf singleton is a pure in-memory object with no
-// resources to release.
-//
-// This component must be passed as the first argument to bootstrap.New() so
-// that the framework guarantees it is initialised before all other components.
-func Component(file string, fs ...*embed.FS) bootstrap.IComponent {
-	var embedFS *embed.FS
-	if len(fs) > 0 {
-		embedFS = fs[0]
+type ginComponent struct {
+	mount func(*gin.Engine)
+}
+
+func (g *ginComponent) Name() string { return "gin" }
+
+func (g *ginComponent) Init() error {
+	// Read CORS origins from env based on the current environment.
+	// Prod uses cors.allow.origins.prod; all other environments use cors.allow.origins.dev.
+	var origins []string
+	if strings.EqualFold(env.Env().String("app.env.value"), "prod") {
+		origins = env.Env().Strings("cors.allow.origins.prod")
+	} else {
+		origins = env.Env().Strings("cors.allow.origins.dev")
 	}
-	return bootstrap.Func("env",
-		func() error { return env.InitEnv(file, embedFS) },
-		nil, // no-op close: koanf holds no releasable resources
-	)
+
+	router := libGin.InitGin(origins)
+	if g.mount != nil {
+		g.mount(router)
+	}
+	return nil
+}
+
+// Close is a no-op: the Gin router has no resources to release; its lifecycle
+// is managed by the HTTP server component.
+func (g *ginComponent) Close() {}
+
+// Component initialises the Gin router and mounts all routes.
+//
+// CORS origins are read from env automatically during Init():
+//   - prod environment: cors.allow.origins.prod
+//   - other environments: cors.allow.origins.dev
+//
+// mount is called once during Init() to register all routes. The *gin.Engine
+// created here should be shared with the HTTP server component via a closure
+// variable captured in the caller's main function:
+//
+//	var router *gin.Engine
+//	Add(ginComp.Component(func(r *gin.Engine) {
+//	    router = r
+//	    adapter.Mount(r)
+//	})).
+//	Add(httpComp.Component(func() http.Handler { return router }))
+func Component(mount func(*gin.Engine)) bootstrap.IComponent {
+	return &ginComponent{mount: mount}
 }

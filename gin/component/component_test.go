@@ -14,32 +14,46 @@
 
 package component
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/phcp-tech/common-library-golang/env"
+)
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
+// TestMain initialises the env singleton so that ginComponent.Init() can read
+// app.env.value and cors.allow.origins.* keys.
+func TestMain(m *testing.M) {
+	if err := env.InitEnv("testdata/config.toml"); err != nil {
+		panic("gin/component tests: failed to load testdata/config.toml: " + err.Error())
+	}
+	os.Exit(m.Run())
+}
 
 func TestComponent_ReturnsNonNil(t *testing.T) {
-	c := Component("testdata/config.toml")
+	c := Component(nil)
 	if c == nil {
-		t.Error("Component() returned nil")
+		t.Error("Component(nil) returned nil")
 	}
 }
 
 func TestComponent_Name(t *testing.T) {
-	c := Component("testdata/config.toml")
-	if c.Name() != "env" {
-		t.Errorf("Name() = %q, want %q", c.Name(), "env")
+	c := Component(nil)
+	if c.Name() != "gin" {
+		t.Errorf("Name() = %q, want %q", c.Name(), "gin")
 	}
 }
 
-func TestComponent_Init_SuccessWithValidFile(t *testing.T) {
-	c := Component("testdata/config.toml")
+// TestComponent_Init_ReturnsNil verifies that Init() reads CORS origins from env
+// and initialises the Gin router successfully.
+func TestComponent_Init_ReturnsNil(t *testing.T) {
+	c := Component(nil)
 	if err := c.Init(); err != nil {
 		t.Errorf("Init() = %v, want nil", err)
 	}
-}
-
-// TestComponent_Close_IsNoOp verifies that Close() does not panic
-// (the koanf singleton has no resources to release).
-func TestComponent_Close_IsNoOp(t *testing.T) {
-	c := Component("testdata/config.toml")
-	c.Close() // must not panic
 }

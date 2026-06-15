@@ -16,18 +16,33 @@ package component_test
 
 import (
 	"fmt"
+	"net/http"
 
-	envComp "github.com/phcp-tech/common-library-golang/env/component"
+	"github.com/gin-gonic/gin"
+	ginComp "github.com/phcp-tech/common-library-golang/gin/component"
 )
 
-// ExampleComponent shows how env.Component() is used as the first argument to
-// bootstrap.New(). It loads the TOML config file into the koanf singleton so
-// that env.Env() is available to all subsequent components.
+// ExampleComponent shows how gin.Component() is registered in a bootstrap chain.
+// CORS origins are read from env automatically (cors.allow.origins.prod or .dev).
+// The *gin.Engine created inside Init() is shared with the HTTP server component
+// via a closure variable in main.
+//
+//	var router *gin.Engine
+//	Add(ginComp.Component(func(r *gin.Engine) {
+//	    router = r
+//	    adapter.Mount(r)
+//	})).
+//	Add(httpComp.Component(func() http.Handler { return router }))
 func ExampleComponent() {
-	c := envComp.Component("testdata/config.toml")
+	var router *gin.Engine
+	c := ginComp.Component(func(r *gin.Engine) {
+		router = r
+	})
 	fmt.Println(c != nil)
 	fmt.Println(c.Name())
+	_ = router
+	_ = http.NewServeMux() // suppress unused import
 	// Output:
 	// true
-	// env
+	// gin
 }
