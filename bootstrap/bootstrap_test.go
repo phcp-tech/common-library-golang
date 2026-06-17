@@ -71,15 +71,18 @@ func TestApp_Add_AppendsSequentialPhase(t *testing.T) {
 	c2 := Func("b", nil, nil)
 	app.Add(c1, c2)
 
-	if len(app.phases) != 1 {
-		t.Fatalf("len(phases) = %d, want 1", len(app.phases))
+	if len(app.steps) != 1 {
+		t.Fatalf("len(steps) = %d, want 1", len(app.steps))
 	}
-	p := app.phases[0]
-	if p.parallel {
+	s := app.steps[0]
+	if s.kind != stepPhase {
+		t.Error("Add() should produce stepPhase step")
+	}
+	if s.phase.parallel {
 		t.Error("Add() should produce parallel=false phase")
 	}
-	if len(p.comps) != 2 {
-		t.Errorf("len(comps) = %d, want 2", len(p.comps))
+	if len(s.phase.comps) != 2 {
+		t.Errorf("len(comps) = %d, want 2", len(s.phase.comps))
 	}
 }
 
@@ -87,15 +90,18 @@ func TestApp_AddParallel_AppendsParallelPhase(t *testing.T) {
 	app := New(Func("env", nil, nil), Func("log", nil, nil))
 	app.AddParallel(Func("a", nil, nil), Func("b", nil, nil), Func("c", nil, nil))
 
-	if len(app.phases) != 1 {
-		t.Fatalf("len(phases) = %d, want 1", len(app.phases))
+	if len(app.steps) != 1 {
+		t.Fatalf("len(steps) = %d, want 1", len(app.steps))
 	}
-	p := app.phases[0]
-	if !p.parallel {
+	s := app.steps[0]
+	if s.kind != stepPhase {
+		t.Error("AddParallel() should produce stepPhase step")
+	}
+	if !s.phase.parallel {
 		t.Error("AddParallel() should produce parallel=true phase")
 	}
-	if len(p.comps) != 3 {
-		t.Errorf("len(comps) = %d, want 3", len(p.comps))
+	if len(s.phase.comps) != 3 {
+		t.Errorf("len(comps) = %d, want 3", len(s.phase.comps))
 	}
 }
 
@@ -126,6 +132,89 @@ func TestCloseAll_LIFO(t *testing.T) {
 		if order[i] != v {
 			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
 		}
+	}
+}
+
+// -----------------------------------------------------------------------
+// PreReady
+// -----------------------------------------------------------------------
+
+func TestApp_PreReady_AppendsStep(t *testing.T) {
+	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app.PreReady(func() error { return nil })
+	app.PreReady(func() error { return nil })
+
+	if len(app.steps) != 2 {
+		t.Fatalf("len(steps) = %d, want 2", len(app.steps))
+	}
+	for i, s := range app.steps {
+		if s.kind != stepPreReady {
+			t.Errorf("steps[%d].kind = %v, want stepPreReady", i, s.kind)
+		}
+		if s.fn == nil {
+			t.Errorf("steps[%d].fn is nil", i)
+		}
+	}
+}
+
+func TestApp_PreReady_ReturnsApp(t *testing.T) {
+	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	got := app.PreReady(func() error { return nil })
+	if got != app {
+		t.Error("PreReady() should return the same *App for chaining")
+	}
+}
+
+func TestApp_PreReady_OrderedWithPhases(t *testing.T) {
+	// Verifies that PreReady and Add steps are interleaved in registration order.
+	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app.AddParallel(Func("db", nil, nil))
+	app.PreReady(func() error { return nil })
+	app.Add(Func("gin", nil, nil))
+
+	if len(app.steps) != 3 {
+		t.Fatalf("len(steps) = %d, want 3", len(app.steps))
+	}
+	if app.steps[0].kind != stepPhase {
+		t.Error("steps[0] should be stepPhase (AddParallel)")
+	}
+	if app.steps[1].kind != stepPreReady {
+		t.Error("steps[1] should be stepPreReady (PreReady)")
+	}
+	if app.steps[2].kind != stepPhase {
+		t.Error("steps[2] should be stepPhase (Add)")
+	}
+}
+
+// -----------------------------------------------------------------------
+// PostReady
+// -----------------------------------------------------------------------
+
+func TestApp_PostReady_AppendsFn(t *testing.T) {
+	var order []int
+	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app.PostReady(func() { order = append(order, 1) })
+	app.PostReady(func() { order = append(order, 2) })
+	app.PostReady(func() { order = append(order, 3) })
+
+	if len(app.postReadyFns) != 3 {
+		t.Fatalf("len(postReadyFns) = %d, want 3", len(app.postReadyFns))
+	}
+	for _, fn := range app.postReadyFns {
+		fn()
+	}
+	for i, v := range []int{1, 2, 3} {
+		if order[i] != v {
+			t.Errorf("order[%d] = %d, want %d", i, order[i], v)
+		}
+	}
+}
+
+func TestApp_PostReady_ReturnsApp(t *testing.T) {
+	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	got := app.PostReady(func() {})
+	if got != app {
+		t.Error("PostReady() should return the same *App for chaining")
 	}
 }
 

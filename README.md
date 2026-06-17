@@ -60,6 +60,15 @@ go test ./... -cover -timeout 60s
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
 | Basic | [`cgroup`](#cgroup--linux-resource-limits) | `.../common-library-golang/cgroup` | Read CPU and memory resource limits from cgroup v2 (Linux only; returns 0 on other platforms) |
 | Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
+| Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; `IComponent` lifecycle contract |
+| Bootstrap | [`env/component`](#bootstrap-component-packages) | `.../common-library-golang/env/component` | `IComponent` adapter for the `env` package |
+| Bootstrap | [`log/component`](#bootstrap-component-packages) | `.../common-library-golang/log/component` | `IComponent` adapter for the `log` package |
+| Bootstrap | [`auth/component`](#bootstrap-component-packages) | `.../common-library-golang/auth/component` | `IComponent` adapter for the `auth` (casbin) package |
+| Bootstrap | [`gin/component`](#bootstrap-component-packages) | `.../common-library-golang/gin/component` | `IComponent` adapter for the `gin` engine |
+| Bootstrap | [`redis/component`](#bootstrap-component-packages) | `.../common-library-golang/redis/component` | `IComponent` adapter for the `redis` package |
+| Bootstrap | [`dbsqlc/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/postgres/component` | `IComponent` adapter for the PostgreSQL pool |
+| Bootstrap | [`dbsqlc/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/sqlite/component` | `IComponent` adapter for the SQLite connection |
+| Bootstrap | [`httpserver/component`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/component` | `IComponent` adapter for the HTTP server |
 | Database | [`redis`](#redis--redis-client) | `.../common-library-golang/redis` | Redis client (standalone and cluster) with connection pool and key scan utilities |
 | Database | [`dbsqlc/postgres`](#dbsqlcpostgres--postgresql-connection-pool) | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
 | Database | [`dbsqlc/sqlite`](#dbsqlcsqlite--sqlite-connection) | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
@@ -444,6 +453,127 @@ w.Write(b)
 ```
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/metrics#pkg-examples).
+
+---
+
+## bootstrap — Application Lifecycle Orchestrator
+
+`bootstrap` orchestrates the sequential initialization and LIFO cleanup of application components at startup. It enforces two ordering rules at compile time:
+
+1. **env** is always initialized first — all configuration must be loaded before any component reads it.
+2. **log** is always initialized second and closed **absolutely last**, so every shutdown log message is captured before the process exits.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/bootstrap"
+    envComp  "github.com/phcp-tech/common-library-golang/env/component"
+    logComp  "github.com/phcp-tech/common-library-golang/log/component"
+    dbComp   "github.com/phcp-tech/common-library-golang/dbsqlc/postgres/component"
+    ginComp  "github.com/phcp-tech/common-library-golang/gin/component"
+    httpComp "github.com/phcp-tech/common-library-golang/httpserver/component"
+)
+
+func main() {
+    var router *gin.Engine
+    bootstrap.New(
+        envComp.Component("config/app.toml", &configFS),
+        logComp.Component(),
+    ).
+        AddParallel(dbComp.Component()).
+        PreReady(migrate).
+        PreReady(initServices).
+        Add(ginComp.Component(func(r *gin.Engine) { router = r; mount(r) })).
+        Add(httpComp.Component(func() http.Handler { return router })).
+        PostReady(func() { slog.Info("server ready") }).
+        Run()
+}
+```
+
+### API
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `New` | `(envComp, logComp IComponent) *App` | Creates the orchestrator; env is always first, log is always closed last |
+| `Add` | `(cs ...IComponent) *App` | Sequential phase: Init runs in registration order, Close in LIFO order |
+| `AddParallel` | `(cs ...IComponent) *App` | Concurrent phase: all Init calls run in parallel; all must succeed before the next step starts |
+| `PreReady` | `(fn func() error) *App` | Inline setup function in the startup sequence; non-nil error aborts startup; no Close, not tracked in LIFO |
+| `PostReady` | `(fn func()) *App` | Notification hook invoked after all steps succeed; multiple calls accumulate in registration order |
+| `Run` | `()` | Executes all steps, waits for SIGINT/SIGTERM, then closes in LIFO order |
+
+### IComponent interface
+
+```go
+type IComponent interface {
+    Name() string   // displayed in log messages
+    Init() error    // non-nil error aborts startup and exits with code 1
+    Close()         // called during shutdown in LIFO order; must never panic
+}
+```
+
+Use `bootstrap.Func` to wrap a function pair as an `IComponent` when Close logic exists but no struct is needed:
+
+```go
+bootstrap.Func("worker", startWorker, stopWorker)
+```
+
+### Startup and shutdown sequence
+
+```
+envComp.Init → logComp.Init → steps (in registration order)
+                                  ├── stepPhase    → Init, added to closeStack
+                                  └── stepPreReady → fn(), not added to closeStack
+                              → PostReady callbacks → wait for signal
+                                                           ↓
+                              ← LIFO close (closeStack reversed) ← signal received
+                              → envComp.Close → logComp.Close  (absolutely last)
+```
+
+### PreReady
+
+`PreReady` registers a function into the startup sequence, sharing the same ordered list as `Add`/`AddParallel`. A non-nil error aborts startup identically to a failed component `Init()`. PreReady steps have no Close and do not participate in LIFO shutdown.
+
+```go
+.AddParallel(dbComp.Component()).
+PreReady(migrate).        // runs after DB is ready
+PreReady(initServices).   // runs after migrate
+Add(ginComp.Component(mount)).
+```
+
+| | `bootstrap.Func(..., nil)` | `PreReady(fn)` |
+|---|---|---|
+| Appears in step list | ✓ as `stepPhase` | ✓ as `stepPreReady` |
+| Participates in LIFO closeStack | ✓ (Close is a no-op) | ✗ |
+| Semantic | "a component without Close" | "one-shot code in the startup sequence" |
+
+### PostReady
+
+`PostReady` can be called multiple times. Each call **appends** a callback; all run in registration order after every step succeeds and before the process blocks on an OS signal. Suitable for actions that do not affect request-handling correctness:
+
+```go
+.PostReady(func() { slog.Info("server ready", "addr", ":8080") }).
+PostReady(func() { discovery.Register(serviceID) })
+```
+
+Code placed after `Run()` in `main`, or in a `defer` before `Run()`, executes after the full shutdown sequence completes and is suitable for post-shutdown teardown.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/bootstrap#pkg-examples).
+
+---
+
+### Bootstrap Component Packages
+
+Each base package ships a companion `component/` sub-package that adapts it to the `IComponent` interface. Component packages read all configuration from `env.Env()` inside `Init()` — never in the constructor — so they are safe to construct before `bootstrap.New()` is called.
+
+| Component package | Env keys read on Init |
+|-------------------|-----------------------|
+| `env/component` | _(none — reads the config file itself)_ |
+| `log/component` | `log.level`, `log.file.path`, `log.file.max.size.mb`, `log.file.max.backups`, `log.file.max.age.days`, `log.file.compress` |
+| `auth/component` | _(model and policy passed as constructor arguments)_ |
+| `gin/component` | `app.env.value`, `cors.allow.origins.prod`, `cors.allow.origins.dev` |
+| `redis/component` | `redis.clusters`, `redis.database`, `redis.password` |
+| `dbsqlc/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.pool.*` |
+| `dbsqlc/sqlite/component` | `db.sqlite.path` |
+| `httpserver/component` | `app.runmode`, `http.server.port` |
 
 ---
 

@@ -21,6 +21,9 @@ import (
 	"github.com/phcp-tech/common-library-golang/log"
 )
 
+// Compile-time check: logComponent implements bootstrap.IComponent.
+var _ bootstrap.IComponent = (*logComponent)(nil)
+
 type logComponent struct{}
 
 func (l *logComponent) Name() string { return "log" }
