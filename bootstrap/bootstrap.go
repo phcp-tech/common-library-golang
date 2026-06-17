@@ -27,8 +27,11 @@
 //	    log.Component(),
 //	).
 //	    AddParallel(dbComp.Component()).
-//	    Add(bootstrap.Func("services", initServices, nil)).
+//	    PreReady(migrate).
+//	    PreReady(initServices).
+//	    Add(ginComp.Component(mount)).
 //	    Add(httpComp.Component(func() http.Handler { return router })).
+//	    PostReady(func() { slog.Info("server ready") }).
 //	    Run()
 package bootstrap
 
@@ -40,7 +43,6 @@ import (
 	"runtime/debug"
 	"sync"
 
-	"github.com/phcp-tech/common-library-golang/network"
 	"github.com/phcp-tech/common-library-golang/shutdown"
 	"golang.org/x/sync/errgroup"
 )
@@ -93,6 +95,21 @@ type phase struct {
 	parallel bool
 }
 
+// stepKind distinguishes component phases from pre-ready hooks in the step list.
+type stepKind int
+
+const (
+	stepPhase    stepKind = iota // Add / AddParallel — has Init + Close lifecycle
+	stepPreReady                 // PreReady — Init only, no Close, not tracked in closeStack
+)
+
+// step is a single entry in the startup sequence.
+type step struct {
+	kind  stepKind
+	phase phase        // valid when kind == stepPhase
+	fn    func() error // valid when kind == stepPreReady
+}
+
 // App is the startup orchestrator. It manages the ordered initialization
 // and LIFO cleanup of application components.
 //
@@ -101,9 +118,10 @@ type phase struct {
 //  2. envComp.Close() (usually no-op)
 //  3. logComp.Close() (absolutely last — flushes the async log buffer)
 type App struct {
-	envComp IComponent
-	logComp IComponent
-	phases  []phase
+	envComp      IComponent
+	logComp      IComponent
+	steps        []step   // ordered mix of stepPhase and stepPreReady
+	postReadyFns []func() // PostReady callbacks, run after all steps succeed
 }
 
 // New creates a new App with mandatory foundation components.
@@ -121,7 +139,7 @@ func New(envComp IComponent, logComp IComponent) *App {
 // Add appends one or more components to the sequential startup chain.
 // Components are initialized in registration order and closed in LIFO order.
 func (a *App) Add(cs ...IComponent) *App {
-	a.phases = append(a.phases, phase{comps: cs, parallel: false})
+	a.steps = append(a.steps, step{kind: stepPhase, phase: phase{comps: cs, parallel: false}})
 	return a
 }
 
@@ -129,7 +147,26 @@ func (a *App) Add(cs ...IComponent) *App {
 // All components in the group must succeed before the next phase begins.
 // On shutdown, the group's components are closed concurrently as a unit.
 func (a *App) AddParallel(cs ...IComponent) *App {
-	a.phases = append(a.phases, phase{comps: cs, parallel: true})
+	a.steps = append(a.steps, step{kind: stepPhase, phase: phase{comps: cs, parallel: true}})
+	return a
+}
+
+// PreReady registers a setup function that runs inline in the startup sequence,
+// in registration order relative to Add/AddParallel calls.
+// A non-nil error aborts startup identically to a failed Init().
+// Multiple calls accumulate; functions run in registration order.
+// PreReady steps have no Close and do not participate in LIFO shutdown.
+func (a *App) PreReady(fn func() error) *App {
+	a.steps = append(a.steps, step{kind: stepPreReady, fn: fn})
+	return a
+}
+
+// PostReady registers a callback that is invoked after all steps succeed
+// and before the process blocks waiting for an OS signal.
+// Multiple calls accumulate; callbacks run in registration order.
+// Use it to log a "server ready" message or register with a service-discovery system.
+func (a *App) PostReady(fn func()) *App {
+	a.postReadyFns = append(a.postReadyFns, fn)
 	return a
 }
 
@@ -175,28 +212,39 @@ func (a *App) Run() {
 		os.Exit(1)
 	}
 
-	// 3. Init custom phases in registration order.
-	for _, p := range a.phases {
-		if p.parallel {
-			eg, _ := errgroup.WithContext(context.Background())
-			for _, c := range p.comps {
-				eg.Go(func() error { return c.Init() })
-			}
-			if err := eg.Wait(); err != nil {
-				failWith("parallel-phase", err)
-			}
-		} else {
-			for _, c := range p.comps {
-				if err := c.Init(); err != nil {
-					failWith(c.Name(), err)
+	// 3. Execute steps in registration order.
+	//    stepPhase  — runs Init on each component, adds to closeStack for LIFO shutdown.
+	//    stepPreReady — runs the function inline; failure aborts startup, no Close registered.
+	for _, s := range a.steps {
+		switch s.kind {
+		case stepPhase:
+			if s.phase.parallel {
+				eg, _ := errgroup.WithContext(context.Background())
+				for _, c := range s.phase.comps {
+					eg.Go(func() error { return c.Init() })
+				}
+				if err := eg.Wait(); err != nil {
+					failWith("parallel-phase", err)
+				}
+			} else {
+				for _, c := range s.phase.comps {
+					if err := c.Init(); err != nil {
+						failWith(c.Name(), err)
+					}
 				}
 			}
+			closeStack = append(closeStack, s.phase)
+		case stepPreReady:
+			if err := s.fn(); err != nil {
+				failWith("pre-ready", err)
+			}
 		}
-		closeStack = append(closeStack, p)
 	}
 
-	// 4. Log startup success.
-	slog.Info("Application started", "ip", network.GetLocalIpAddress())
+	// 4. Invoke PostReady callbacks in registration order.
+	for _, fn := range a.postReadyFns {
+		fn()
+	}
 
 	// 5. Block until OS signal or shutdown.Trigger().
 	shutdown.Wait()

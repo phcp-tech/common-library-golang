@@ -30,6 +30,14 @@ import (
 	"github.com/phcp-tech/common-library-golang/shutdown"
 )
 
+// Compile-time check: httpComponent implements bootstrap.IComponent.
+var _ bootstrap.IComponent = (*httpComponent)(nil)
+
+type httpComponent struct {
+	handler func() http.Handler
+	runner  httpserver.Runner
+}
+
 // loadFromEnv creates an HTTP server Runner from the koanf env singleton.
 // It reads app.runmode and http.server.port, returning the appropriate Runner.
 func loadFromEnv() httpserver.Runner {
@@ -40,11 +48,6 @@ func loadFromEnv() httpserver.Runner {
 	port := env.Env().String("http.server.port")
 	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", port))
 	return httpserver.NewHttpServer(httpserver.Config{Port: port})
-}
-
-type httpComponent struct {
-	handler func() http.Handler
-	runner  httpserver.Runner
 }
 
 func (h *httpComponent) Name() string { return "httpserver" }

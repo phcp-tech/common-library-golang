@@ -24,6 +24,9 @@ import (
 	libGin "github.com/phcp-tech/common-library-golang/gin"
 )
 
+// Compile-time check: ginComponent implements bootstrap.IComponent.
+var _ bootstrap.IComponent = (*ginComponent)(nil)
+
 type ginComponent struct {
 	mount func(*gin.Engine)
 }
