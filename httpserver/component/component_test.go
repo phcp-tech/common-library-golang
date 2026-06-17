@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/phcp-tech/common-library-golang/env"
 	"github.com/phcp-tech/common-library-golang/httpserver/component"
@@ -71,4 +72,28 @@ func TestComponent_ReturnType(t *testing.T) {
 		Init() error
 		Close()
 	} = c
+}
+
+// TestComponent_Close_WhenRunnerNil verifies that Close() does not panic when
+// called before Init(). The internal runner field is nil in this state, so
+// Close() must return immediately via the nil guard without dereferencing it.
+func TestComponent_Close_WhenRunnerNil(t *testing.T) {
+	c := component.Component(func() http.Handler { return http.NewServeMux() })
+	c.Close() // runner == nil — must not panic; covers nil guard + return
+}
+
+// TestComponent_Close_AfterInit verifies that Close() executes the full
+// shutdown path (context creation, Shutdown call, slog.Info) without panicking.
+//
+// Init() starts the server goroutine with port "99999" (invalid), which
+// causes the goroutine to fail immediately. A brief sleep ensures the
+// goroutine has exited before Close() calls Shutdown, avoiding any race
+// on the underlying http.Server state.
+func TestComponent_Close_AfterInit(t *testing.T) {
+	c := component.Component(func() http.Handler { return http.NewServeMux() })
+	if err := c.Init(); err != nil {
+		t.Fatalf("Init() = %v, want nil", err)
+	}
+	time.Sleep(20 * time.Millisecond) // let server goroutine fail with invalid port
+	c.Close()                         // must not panic; covers ctx/defer/Shutdown/slog.Info
 }

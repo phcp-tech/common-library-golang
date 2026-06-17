@@ -18,6 +18,8 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+
+	"github.com/phcp-tech/common-library-golang/shutdown"
 )
 
 // -----------------------------------------------------------------------
@@ -215,6 +217,116 @@ func TestApp_PostReady_ReturnsApp(t *testing.T) {
 	got := app.PostReady(func() {})
 	if got != app {
 		t.Error("PostReady() should return the same *App for chaining")
+	}
+}
+
+// -----------------------------------------------------------------------
+// Run — happy path
+//
+// shutdown.Trigger() is called inside a PostReady callback to unblock
+// shutdown.Wait() immediately after startup, allowing Run() to complete
+// within the test. Once Trigger() fires, subsequent Wait() calls in the
+// same test binary return at once; tests are written so that this does
+// not affect their correctness.
+// -----------------------------------------------------------------------
+
+func TestRun_SequentialPhaseAndPreReady(t *testing.T) {
+	var order []string
+
+	New(
+		Func("env",
+			func() error { order = append(order, "env-init"); return nil },
+			func() { order = append(order, "env-close") }),
+		Func("log",
+			func() error { order = append(order, "log-init"); return nil },
+			func() { order = append(order, "log-close") }),
+	).
+		Add(Func("svc",
+			func() error { order = append(order, "svc-init"); return nil },
+			func() { order = append(order, "svc-close") })).
+		PreReady(func() error { order = append(order, "pre-ready"); return nil }).
+		PostReady(func() {
+			order = append(order, "post-ready")
+			shutdown.Trigger()
+		}).
+		Run()
+
+	want := []string{
+		"env-init", "log-init",
+		"svc-init", "pre-ready", "post-ready",
+		"svc-close", "env-close", "log-close",
+	}
+	if len(order) != len(want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	for i, v := range want {
+		if order[i] != v {
+			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
+		}
+	}
+}
+
+func TestRun_LIFOCloseOrder(t *testing.T) {
+	var closed []string
+
+	New(
+		Func("env", nil, func() { closed = append(closed, "env") }),
+		Func("log", nil, func() { closed = append(closed, "log") }),
+	).
+		Add(Func("a", nil, func() { closed = append(closed, "a") })).
+		Add(Func("b", nil, func() { closed = append(closed, "b") })).
+		Add(Func("c", nil, func() { closed = append(closed, "c") })).
+		PostReady(func() { shutdown.Trigger() }).
+		Run()
+
+	want := []string{"c", "b", "a", "env", "log"}
+	if len(closed) != len(want) {
+		t.Fatalf("close order = %v, want %v", closed, want)
+	}
+	for i, v := range want {
+		if closed[i] != v {
+			t.Errorf("closed[%d] = %q, want %q", i, closed[i], v)
+		}
+	}
+}
+
+func TestRun_ParallelPhaseAllInited(t *testing.T) {
+	var count atomic.Int32
+
+	New(Func("env", nil, nil), Func("log", nil, nil)).
+		AddParallel(
+			Func("a", func() error { count.Add(1); return nil }, nil),
+			Func("b", func() error { count.Add(1); return nil }, nil),
+			Func("c", func() error { count.Add(1); return nil }, nil),
+		).
+		PostReady(func() { shutdown.Trigger() }).
+		Run()
+
+	if count.Load() != 3 {
+		t.Errorf("parallel init count = %d, want 3", count.Load())
+	}
+}
+
+func TestRun_MultiplePostReadyCallbacks(t *testing.T) {
+	var order []string
+
+	New(Func("env", nil, nil), Func("log", nil, nil)).
+		PostReady(func() { order = append(order, "first") }).
+		PostReady(func() { order = append(order, "second") }).
+		PostReady(func() {
+			order = append(order, "third")
+			shutdown.Trigger()
+		}).
+		Run()
+
+	want := []string{"first", "second", "third"}
+	if len(order) != len(want) {
+		t.Fatalf("post-ready order = %v, want %v", order, want)
+	}
+	for i, v := range want {
+		if order[i] != v {
+			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
+		}
 	}
 }
 

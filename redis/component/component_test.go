@@ -56,3 +56,14 @@ func TestComponent_Init_ReturnsNil(t *testing.T) {
 		t.Errorf("Component().Init() = %v, want nil (go-redis is lazy)", err)
 	}
 }
+
+// TestComponent_Close_WhenClientInitialised verifies that Close() executes the
+// full close function body without panicking when the default client is non-nil.
+//
+// Init() is called first to ensure redis.Default() != nil. redis.InitDefault
+// uses sync.Once, so the call is idempotent if Init was already invoked above.
+func TestComponent_Close_WhenClientInitialised(t *testing.T) {
+	c := Component()
+	_ = c.Init() // idempotent — ensures redis.Default() != nil
+	c.Close()    // must not panic; covers cli.Close() + slog.Info branch
+}

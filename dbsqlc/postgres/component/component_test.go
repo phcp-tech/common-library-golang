@@ -61,3 +61,17 @@ func TestComponent_Init_ReturnsErrorWhenDatabaseUnreachable(t *testing.T) {
 		t.Error("Component().Init() should return an error when the database is unreachable, got nil")
 	}
 }
+
+// TestComponent_Close_WhenPoolNil verifies that Close() does not panic when
+// the default pool is nil (i.e. Init() failed or was never called).
+//
+// Because Init() always fails with the testdata config (127.0.0.1:1 is
+// unreachable), postgres.Default() returns nil. The close function executes
+// the nil guard `if pool != nil` and returns without calling pool.Close().
+// Covering pool.Close() and the success path of loadFromEnv requires a live
+// PostgreSQL server and is therefore deferred to integration tests.
+func TestComponent_Close_WhenPoolNil(t *testing.T) {
+	c := Component()
+	_ = c.Init() // fails — postgres.Default() remains nil
+	c.Close()    // must not panic; covers the nil-pool guard in the close fn
+}
