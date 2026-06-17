@@ -58,3 +58,17 @@ func TestComponent_Init_ReturnsNilWithMemoryDB(t *testing.T) {
 		t.Errorf("Component().Init() = %v, want nil (in-memory database)", err)
 	}
 }
+
+// TestComponent_Close_WhenDBInitialised verifies that Close() executes the
+// full close body (db.Close + slog.Info) without panicking when the default
+// SQLite connection is non-nil.
+//
+// Init() must be called first because sqlite.InitDefault only sets the
+// singleton on success. With ":memory:", Init() always succeeds, so
+// sqlite.Default() is guaranteed non-nil after this call.
+// sqlite.InitDefault uses sync.Once, so the call is idempotent.
+func TestComponent_Close_WhenDBInitialised(t *testing.T) {
+	c := Component()
+	_ = c.Init() // idempotent — ensures sqlite.Default() != nil
+	c.Close()    // must not panic; covers db.Close() + slog.Info branch
+}

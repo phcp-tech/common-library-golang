@@ -22,12 +22,16 @@ import (
 )
 
 // TestMain initialises the env singleton so that logComponent.Init() can read
-// log.level and related keys via env.Env().
+// log.level and log.file.* keys via env.Env().
+// The testdata config sets log.file.path so the file-logging branch in Init()
+// is exercised. The temporary log file is removed after all tests complete.
 func TestMain(m *testing.M) {
 	if err := env.InitEnv("testdata/config.toml"); err != nil {
 		panic("log/component tests: failed to load testdata/config.toml: " + err.Error())
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	os.Remove("testdata/testlog.tmp")
+	os.Exit(code)
 }
 
 func TestComponent_ReturnsNonNil(t *testing.T) {
@@ -46,9 +50,23 @@ func TestComponent_Name(t *testing.T) {
 
 // TestComponent_Init_ReturnsNil verifies that Init() reads log config from env
 // and calls log.InitLog without error.
+// The testdata config sets log.file.path, so this call also exercises the
+// file-logging branch (cfg.FilePath, cfg.MaxSizeMB, cfg.MaxBackups, etc.).
 func TestComponent_Init_ReturnsNil(t *testing.T) {
 	c := Component()
 	if err := c.Init(); err != nil {
 		t.Errorf("Init() = %v, want nil", err)
 	}
+}
+
+// TestComponent_Close_FlushesLog verifies that Close() executes its full body
+// (log.Info + log.Close) without panicking.
+//
+// Init() is called first to ensure the log singleton is initialised.
+// log.InitLog uses a singleton, so the call is idempotent if Init was
+// already invoked by a prior test.
+func TestComponent_Close_FlushesLog(t *testing.T) {
+	c := Component()
+	_ = c.Init() // idempotent — ensures log is initialised before closing
+	c.Close()    // must not panic; covers log.Info + log.Close
 }
