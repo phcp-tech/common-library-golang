@@ -59,19 +59,14 @@ func TestFunc_CloseIsCalled(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestNew_NotNil(t *testing.T) {
-	env := Func("env", nil, nil)
-	log := Func("log", nil, nil)
-	app := New(env, log)
-	if app == nil {
+	if New() == nil {
 		t.Error("New() returned nil")
 	}
 }
 
 func TestApp_Add_AppendsSequentialPhase(t *testing.T) {
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
-	c1 := Func("a", nil, nil)
-	c2 := Func("b", nil, nil)
-	app.Add(c1, c2)
+	app := New()
+	app.Add(Func("a", nil, nil), Func("b", nil, nil))
 
 	if len(app.steps) != 1 {
 		t.Fatalf("len(steps) = %d, want 1", len(app.steps))
@@ -89,7 +84,7 @@ func TestApp_Add_AppendsSequentialPhase(t *testing.T) {
 }
 
 func TestApp_AddParallel_AppendsParallelPhase(t *testing.T) {
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app := New()
 	app.AddParallel(Func("a", nil, nil), Func("b", nil, nil), Func("c", nil, nil))
 
 	if len(app.steps) != 1 {
@@ -108,41 +103,11 @@ func TestApp_AddParallel_AppendsParallelPhase(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// closeAll
-// -----------------------------------------------------------------------
-
-func TestCloseAll_LIFO(t *testing.T) {
-	var order []string
-
-	makeComp := func(name string) IComponent {
-		return Func(name, nil, func() { order = append(order, name) })
-	}
-
-	phases := []phase{
-		{comps: []IComponent{makeComp("a")}, parallel: false},
-		{comps: []IComponent{makeComp("b")}, parallel: false},
-		{comps: []IComponent{makeComp("c")}, parallel: false},
-	}
-
-	closeAll(phases)
-
-	want := []string{"c", "b", "a"}
-	if len(order) != len(want) {
-		t.Fatalf("close order len = %d, want %d", len(order), len(want))
-	}
-	for i, v := range want {
-		if order[i] != v {
-			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
-		}
-	}
-}
-
-// -----------------------------------------------------------------------
 // PreReady
 // -----------------------------------------------------------------------
 
 func TestApp_PreReady_AppendsStep(t *testing.T) {
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app := New()
 	app.PreReady(func() error { return nil })
 	app.PreReady(func() error { return nil })
 
@@ -160,16 +125,14 @@ func TestApp_PreReady_AppendsStep(t *testing.T) {
 }
 
 func TestApp_PreReady_ReturnsApp(t *testing.T) {
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
-	got := app.PreReady(func() error { return nil })
-	if got != app {
+	app := New()
+	if got := app.PreReady(func() error { return nil }); got != app {
 		t.Error("PreReady() should return the same *App for chaining")
 	}
 }
 
 func TestApp_PreReady_OrderedWithPhases(t *testing.T) {
-	// Verifies that PreReady and Add steps are interleaved in registration order.
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app := New()
 	app.AddParallel(Func("db", nil, nil))
 	app.PreReady(func() error { return nil })
 	app.Add(Func("gin", nil, nil))
@@ -194,7 +157,7 @@ func TestApp_PreReady_OrderedWithPhases(t *testing.T) {
 
 func TestApp_PostReady_AppendsFn(t *testing.T) {
 	var order []int
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
+	app := New()
 	app.PostReady(func() { order = append(order, 1) })
 	app.PostReady(func() { order = append(order, 2) })
 	app.PostReady(func() { order = append(order, 3) })
@@ -213,9 +176,8 @@ func TestApp_PostReady_AppendsFn(t *testing.T) {
 }
 
 func TestApp_PostReady_ReturnsApp(t *testing.T) {
-	app := New(Func("env", nil, nil), Func("log", nil, nil))
-	got := app.PostReady(func() {})
-	if got != app {
+	app := New()
+	if got := app.PostReady(func() {}); got != app {
 		t.Error("PostReady() should return the same *App for chaining")
 	}
 }
@@ -223,24 +185,21 @@ func TestApp_PostReady_ReturnsApp(t *testing.T) {
 // -----------------------------------------------------------------------
 // Run — happy path
 //
-// shutdown.Trigger() is called inside a PostReady callback to unblock
-// shutdown.Wait() immediately after startup, allowing Run() to complete
-// within the test. Once Trigger() fires, subsequent Wait() calls in the
-// same test binary return at once; tests are written so that this does
-// not affect their correctness.
+// The env and log components are registered as the first two Add() calls,
+// matching the documented convention. shutdown.Trigger() is called inside
+// a PostReady callback to unblock shutdown.Wait() immediately after startup.
 // -----------------------------------------------------------------------
 
 func TestRun_SequentialPhaseAndPreReady(t *testing.T) {
 	var order []string
 
-	New(
-		Func("env",
+	New().
+		Add(Func("env",
 			func() error { order = append(order, "env-init"); return nil },
-			func() { order = append(order, "env-close") }),
-		Func("log",
+			func() { order = append(order, "env-close") })).
+		Add(Func("log",
 			func() error { order = append(order, "log-init"); return nil },
-			func() { order = append(order, "log-close") }),
-	).
+			func() { order = append(order, "log-close") })).
 		Add(Func("svc",
 			func() error { order = append(order, "svc-init"); return nil },
 			func() { order = append(order, "svc-close") })).
@@ -251,10 +210,11 @@ func TestRun_SequentialPhaseAndPreReady(t *testing.T) {
 		}).
 		Run()
 
+	// LIFO close: svc → log → env  (env.Close is a no-op in production)
 	want := []string{
 		"env-init", "log-init",
 		"svc-init", "pre-ready", "post-ready",
-		"svc-close", "env-close", "log-close",
+		"svc-close", "log-close", "env-close",
 	}
 	if len(order) != len(want) {
 		t.Fatalf("order = %v, want %v", order, want)
@@ -269,17 +229,17 @@ func TestRun_SequentialPhaseAndPreReady(t *testing.T) {
 func TestRun_LIFOCloseOrder(t *testing.T) {
 	var closed []string
 
-	New(
-		Func("env", nil, func() { closed = append(closed, "env") }),
-		Func("log", nil, func() { closed = append(closed, "log") }),
-	).
+	New().
+		Add(Func("env", nil, func() { closed = append(closed, "env") })).
+		Add(Func("log", nil, func() { closed = append(closed, "log") })).
 		Add(Func("a", nil, func() { closed = append(closed, "a") })).
 		Add(Func("b", nil, func() { closed = append(closed, "b") })).
 		Add(Func("c", nil, func() { closed = append(closed, "c") })).
 		PostReady(func() { shutdown.Trigger() }).
 		Run()
 
-	want := []string{"c", "b", "a", "env", "log"}
+	// closeStack = [env, log, a, b, c]; LIFO: c → b → a → log → env
+	want := []string{"c", "b", "a", "log", "env"}
 	if len(closed) != len(want) {
 		t.Fatalf("close order = %v, want %v", closed, want)
 	}
@@ -293,7 +253,9 @@ func TestRun_LIFOCloseOrder(t *testing.T) {
 func TestRun_ParallelPhaseAllInited(t *testing.T) {
 	var count atomic.Int32
 
-	New(Func("env", nil, nil), Func("log", nil, nil)).
+	New().
+		Add(Func("env", nil, nil)).
+		Add(Func("log", nil, nil)).
 		AddParallel(
 			Func("a", func() error { count.Add(1); return nil }, nil),
 			Func("b", func() error { count.Add(1); return nil }, nil),
@@ -310,7 +272,9 @@ func TestRun_ParallelPhaseAllInited(t *testing.T) {
 func TestRun_MultiplePostReadyCallbacks(t *testing.T) {
 	var order []string
 
-	New(Func("env", nil, nil), Func("log", nil, nil)).
+	New().
+		Add(Func("env", nil, nil)).
+		Add(Func("log", nil, nil)).
 		PostReady(func() { order = append(order, "first") }).
 		PostReady(func() { order = append(order, "second") }).
 		PostReady(func() {
@@ -330,6 +294,35 @@ func TestRun_MultiplePostReadyCallbacks(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------
+// closeAll
+// -----------------------------------------------------------------------
+
+func TestCloseAll_LIFO(t *testing.T) {
+	var order []string
+
+	makeComp := func(name string) IComponent {
+		return Func(name, nil, func() { order = append(order, name) })
+	}
+
+	phases := []phase{
+		{comps: []IComponent{makeComp("a")}, parallel: false},
+		{comps: []IComponent{makeComp("b")}, parallel: false},
+		{comps: []IComponent{makeComp("c")}, parallel: false},
+	}
+	closeAll(phases)
+
+	want := []string{"c", "b", "a"}
+	if len(order) != len(want) {
+		t.Fatalf("close order len = %d, want %d", len(order), len(want))
+	}
+	for i, v := range want {
+		if order[i] != v {
+			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
+		}
+	}
+}
+
 func TestCloseAll_ParallelGroup_AllClosed(t *testing.T) {
 	var count atomic.Int32
 
@@ -340,7 +333,6 @@ func TestCloseAll_ParallelGroup_AllClosed(t *testing.T) {
 	phases := []phase{
 		{comps: []IComponent{makeComp(), makeComp(), makeComp()}, parallel: true},
 	}
-
 	closeAll(phases)
 
 	if count.Load() != 3 {

@@ -60,7 +60,7 @@ go test ./... -cover -timeout 60s
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
 | Basic | [`cgroup`](#cgroup--linux-resource-limits) | `.../common-library-golang/cgroup` | Read CPU and memory resource limits from cgroup v2 (Linux only; returns 0 on other platforms) |
 | Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
-| Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; `IComponent` lifecycle contract |
+| Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; 1st `Add()` = env, 2nd `Add()` = log (convention) |
 | Bootstrap | [`env/component`](#bootstrap-component-packages) | `.../common-library-golang/env/component` | `IComponent` adapter for the `env` package |
 | Bootstrap | [`log/component`](#bootstrap-component-packages) | `.../common-library-golang/log/component` | `IComponent` adapter for the `log` package |
 | Bootstrap | [`auth/component`](#bootstrap-component-packages) | `.../common-library-golang/auth/component` | `IComponent` adapter for the `auth` (casbin) package |
@@ -458,10 +458,19 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 
 ## bootstrap — Application Lifecycle Orchestrator
 
-`bootstrap` orchestrates the sequential initialization and LIFO cleanup of application components at startup. It enforces two ordering rules at compile time:
+`bootstrap` orchestrates the sequential initialization and LIFO cleanup of application components at startup.
 
-1. **env** is always initialized first — all configuration must be loaded before any component reads it.
-2. **log** is always initialized second and closed **absolutely last**, so every shutdown log message is captured before the process exits.
+> **Component registration order convention**
+>
+> The **first** `Add()` call MUST register the **env** component.
+> The **second** `Add()` call MUST register the **log** component.
+> All subsequent calls (`Add`, `AddParallel`, `PreReady`) are free.
+>
+> This convention exists because:
+> - every component's `Init()` reads configuration via `env.Env()`, so env must initialize first;
+> - Go's `slog` package has a usable default instance from program start (writes to stderr), so
+>   `Init()` failures at any stage — including before `log.Init()` — are captured by `slog`;
+> - `env.Close()` is a no-op, so LIFO naturally makes `log.Close()` the last meaningful shutdown operation.
 
 ```go
 import (
@@ -475,10 +484,9 @@ import (
 
 func main() {
     var router *gin.Engine
-    bootstrap.New(
-        envComp.Component("config/app.toml", &configFS),
-        logComp.Component(),
-    ).
+    bootstrap.New().
+        Add(envComp.Component("config/app.toml", &configFS)). // 1st — MUST be env
+        Add(logComp.Component()).                              // 2nd — MUST be log
         AddParallel(dbComp.Component()).
         PreReady(migrate).
         PreReady(initServices).
@@ -493,8 +501,8 @@ func main() {
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `New` | `(envComp, logComp IComponent) *App` | Creates the orchestrator; env is always first, log is always closed last |
-| `Add` | `(cs ...IComponent) *App` | Sequential phase: Init runs in registration order, Close in LIFO order |
+| `New` | `() *App` | Creates an empty orchestrator |
+| `Add` | `(cs ...IComponent) *App` | Sequential phase: Init in registration order, Close in LIFO order. **1st call = env, 2nd call = log** |
 | `AddParallel` | `(cs ...IComponent) *App` | Concurrent phase: all Init calls run in parallel; all must succeed before the next step starts |
 | `PreReady` | `(fn func() error) *App` | Inline setup function in the startup sequence; non-nil error aborts startup; no Close, not tracked in LIFO |
 | `PostReady` | `(fn func()) *App` | Notification hook invoked after all steps succeed; multiple calls accumulate in registration order |
@@ -519,13 +527,19 @@ bootstrap.Func("worker", startWorker, stopWorker)
 ### Startup and shutdown sequence
 
 ```
-envComp.Init → logComp.Init → steps (in registration order)
-                                  ├── stepPhase    → Init, added to closeStack
-                                  └── stepPreReady → fn(), not added to closeStack
-                              → PostReady callbacks → wait for signal
-                                                           ↓
-                              ← LIFO close (closeStack reversed) ← signal received
-                              → envComp.Close → logComp.Close  (absolutely last)
+New()
+  → Add(env).Init   ← slog (default handler writes to stderr before log.Init)
+  → Add(log).Init   ← slog
+  → steps (in registration order)
+        ├── stepPhase    → Init, added to closeStack
+        └── stepPreReady → fn(), not added to closeStack
+  → PostReady callbacks
+  → wait for signal
+        ↓
+  ← single closeAll (LIFO)
+        custom components (reverse order)
+        → log.Close   (last meaningful close — env.Close is a no-op)
+        → env.Close   (no-op)
 ```
 
 ### PreReady

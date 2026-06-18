@@ -18,26 +18,56 @@ import (
 	"fmt"
 
 	"github.com/phcp-tech/common-library-golang/bootstrap"
+	envComp "github.com/phcp-tech/common-library-golang/env/component"
+	logComp "github.com/phcp-tech/common-library-golang/log/component"
 )
+
+// ExampleNew shows the complete bootstrap chain.
+//
+// Registration order convention — the first two Add() calls are reserved:
+//   - 1st Add: env component  (MUST be first — all other Init() calls read env)
+//   - 2nd Add: log component  (MUST be second — log.Close() is last via LIFO)
+//
+// All subsequent Add / AddParallel / PreReady calls are order-independent
+// relative to each other (subject to their own logical dependencies).
+//
+//	bootstrap.New().
+//	    Add(envComp.Component("config/app.toml", &configFS)). // 1st — env
+//	    Add(logComp.Component()).                              // 2nd — log
+//	    AddParallel(dbComp.Component()).
+//	    PreReady(migrate).
+//	    Add(ginComp.Component(mount)).
+//	    Add(httpComp.Component(handler)).
+//	    PostReady(func() { slog.Info("server ready") }).
+//	    Run()
+func ExampleNew() {
+	app := bootstrap.New().
+		Add(envComp.Component("config/app.toml")). // 1st — env
+		Add(logComp.Component())                   // 2nd — log
+	fmt.Println(app != nil)
+	// Output:
+	// true
+}
 
 // ExampleApp_PreReady shows how to register inline setup functions that run
 // in the startup sequence before the HTTP server starts.
-// Each PreReady call appends a step; steps run in registration order relative
+// Each PreReady call appends a step that runs in registration order relative
 // to Add/AddParallel calls. A non-nil error aborts startup identically to a
 // failed component Init().
 //
-//	bootstrap.New(envComp.Component(...), logComp.Component()).
+//	bootstrap.New().
+//	    Add(envComp.Component("config/app.toml", &configFS)). // 1st — env
+//	    Add(logComp.Component()).                              // 2nd — log
 //	    AddParallel(dbComp.Component()).
-//	    PreReady(migrate).        // runs after DB is ready
-//	    PreReady(initServices).   // runs after migrate
+//	    PreReady(migrate).          // runs after DB is ready
+//	    PreReady(initServices).     // runs after migrate
 //	    Add(ginComp.Component(mount)).
 //	    Add(httpComp.Component(handler)).
 //	    Run()
 func ExampleApp_PreReady() {
-	app := bootstrap.New(
-		bootstrap.Func("env", nil, nil),
-		bootstrap.Func("log", nil, nil),
-	).
+	app := bootstrap.New().
+		Add(envComp.Component("config/app.toml")). // 1st — env
+		Add(logComp.Component()).                   // 2nd — log
 		PreReady(func() error { return nil }).
 		PreReady(func() error { return nil })
 	fmt.Println(app != nil)
@@ -49,21 +79,18 @@ func ExampleApp_PreReady() {
 // Each PostReady call appends a callback; all run in registration order after
 // every step succeeds and before the process blocks waiting for an OS signal.
 //
-// Multiple PostReady calls are useful when separate concerns each need a
-// post-startup hook independently:
-//
-//	bootstrap.New(envComp.Component(...), logComp.Component()).
-//	    AddParallel(dbComp.Component()).
+//	bootstrap.New().
+//	    Add(envComp.Component("config/app.toml", &configFS)). // 1st — env
+//	    Add(logComp.Component()).                              // 2nd — log
 //	    Add(ginComp.Component(mount)).
 //	    Add(httpComp.Component(handler)).
 //	    PostReady(func() { slog.Info("server ready", "addr", ":8080") }).
 //	    PostReady(func() { discovery.Register(serviceID) }).
 //	    Run()
 func ExampleApp_PostReady() {
-	app := bootstrap.New(
-		bootstrap.Func("env", nil, nil),
-		bootstrap.Func("log", nil, nil),
-	).
+	app := bootstrap.New().
+		Add(envComp.Component("config/app.toml")). // 1st — env
+		Add(logComp.Component()).                   // 2nd — log
 		PostReady(func() { fmt.Println("first") }).
 		PostReady(func() { fmt.Println("second") }).
 		PostReady(func() { fmt.Println("third") })
