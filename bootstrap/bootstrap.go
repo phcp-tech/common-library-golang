@@ -15,17 +15,24 @@
 // Package bootstrap orchestrates the sequential initialization and LIFO cleanup
 // of application components at startup.
 //
-// Env is always initialized first; Log is always initialized second and
-// closed absolutely last so that all cleanup log messages are captured before
-// the process exits. All other components are registered via [App.Add] or
-// [App.AddParallel] and participate in LIFO cleanup.
+// # Component registration order
+//
+// The env component MUST be the first Add() call, and the log component MUST
+// be the second Add() call. This is a hard convention:
+//
+//   - Every component reads configuration via env.Env() inside Init(), so env
+//     must be initialized before any other component.
+//   - go's slog package has a usable default instance from program start, so
+//     Init() failures at any stage — including before log.Init() — are captured
+//     by slog and written to stderr via the default handler.
+//   - env.Close() is a no-op, so LIFO naturally makes log.Close() the last
+//     meaningful shutdown operation.
 //
 // Basic usage:
 //
-//	bootstrap.New(
-//	    env.Component("config/app.toml", &configFS),
-//	    log.Component(),
-//	).
+//	bootstrap.New().
+//	    Add(envComp.Component("config/app.toml", &configFS)). // MUST be first
+//	    Add(logComp.Component()).                              // MUST be second
 //	    AddParallel(dbComp.Component()).
 //	    PreReady(migrate).
 //	    PreReady(initServices).
@@ -47,7 +54,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Component is the lifecycle unit managed by [App].
+// IComponent is the lifecycle unit managed by [App].
 // Init is called during startup in registration order.
 // Close is called during shutdown in LIFO order and must never fail.
 type IComponent interface {
@@ -100,7 +107,7 @@ type stepKind int
 
 const (
 	stepPhase    stepKind = iota // Add / AddParallel — has Init + Close lifecycle
-	stepPreReady                 // PreReady — Init only, no Close, not tracked in closeStack
+	stepPreReady                 // PreReady — inline function, Init only, no Close
 )
 
 // step is a single entry in the startup sequence.
@@ -113,27 +120,20 @@ type step struct {
 // App is the startup orchestrator. It manages the ordered initialization
 // and LIFO cleanup of application components.
 //
-// Close order guarantee:
-//  1. Add/AddParallel components in LIFO order
-//  2. envComp.Close() (usually no-op)
-//  3. logComp.Close() (absolutely last — flushes the async log buffer)
+// All components participate in the same LIFO close stack.
+// Because env.Close() is a no-op, log.Close() is the last meaningful close.
 type App struct {
-	envComp      IComponent
-	logComp      IComponent
-	steps        []step   // ordered mix of stepPhase and stepPreReady
-	postReadyFns []func() // PostReady callbacks, run after all steps succeed
+	steps        []step
+	postReadyFns []func()
 }
 
-// New creates a new App with mandatory foundation components.
+// New creates an empty App.
 //
-// envComp is initialized first (all other components depend on configuration).
-// logComp is initialized second and closed absolutely last so that all cleanup
-// log messages are captured before the process exits.
-//
-// Both are passed as constructor parameters rather than Add() calls to enforce
-// the ordering constraint at compile time.
-func New(envComp IComponent, logComp IComponent) *App {
-	return &App{envComp: envComp, logComp: logComp}
+// The first Add() call MUST register the env component, and the second Add()
+// call MUST register the log component. See package-level documentation for
+// the rationale.
+func New() *App {
+	return &App{}
 }
 
 // Add appends one or more components to the sequential startup chain.
@@ -161,21 +161,27 @@ func (a *App) PreReady(fn func() error) *App {
 	return a
 }
 
-// PostReady registers a callback that is invoked after all steps succeed
-// and before the process blocks waiting for an OS signal.
+// PostReady registers a callback invoked after all steps succeed and before
+// the process blocks waiting for an OS signal.
 // Multiple calls accumulate; callbacks run in registration order.
-// Use it to log a "server ready" message or register with a service-discovery system.
 func (a *App) PostReady(fn func()) *App {
 	a.postReadyFns = append(a.postReadyFns, fn)
 	return a
 }
 
-// Run initializes all components, waits for a shutdown signal, then closes
-// all components in reverse order.
+// Run initializes all components in registration order, invokes PostReady
+// callbacks, waits for a shutdown signal, then closes all components in
+// LIFO order.
 //
-// On Init failure: rolls back already-initialized components in LIFO order,
-// flushes the log buffer, then calls os.Exit(1).
-// Panics in the main goroutine are recovered, written to stderr, and exit with code 2.
+// All Init failures are reported via slog. Go's default slog handler writes
+// to stderr, so failures before the log component is initialized are still
+// captured. After log.Init() replaces the default handler, subsequent failures
+// use the configured output.
+//
+// On Init failure: rolls back already-initialized components in LIFO order
+// and exits with code 1.
+// Panics in the main goroutine are recovered, written to stderr, and exit
+// with code 2.
 func (a *App) Run() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -185,36 +191,14 @@ func (a *App) Run() {
 		}
 	}()
 
-	// closeStack tracks initialized custom components for LIFO rollback/shutdown.
 	var closeStack []phase
 
-	// failWith logs the error, rolls back all started custom components,
-	// then closes env and log before exiting.
-	// Must only be called after logComp.Init() has succeeded.
 	failWith := func(name string, err error) {
 		slog.Error("Bootstrap init failed", "component", name, "error", err)
 		closeAll(closeStack)
-		a.envComp.Close()
-		a.logComp.Close()
 		os.Exit(1)
 	}
 
-	// 1. Init env — always first; use stderr because log is not yet available.
-	if err := a.envComp.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "bootstrap: init [%s] failed: %v\n", a.envComp.Name(), err)
-		os.Exit(1)
-	}
-
-	// 2. Init log — always second; all subsequent errors go through slog.
-	if err := a.logComp.Init(); err != nil {
-		a.envComp.Close()
-		fmt.Fprintf(os.Stderr, "bootstrap: init [%s] failed: %v\n", a.logComp.Name(), err)
-		os.Exit(1)
-	}
-
-	// 3. Execute steps in registration order.
-	//    stepPhase  — runs Init on each component, adds to closeStack for LIFO shutdown.
-	//    stepPreReady — runs the function inline; failure aborts startup, no Close registered.
 	for _, s := range a.steps {
 		switch s.kind {
 		case stepPhase:
@@ -241,22 +225,15 @@ func (a *App) Run() {
 		}
 	}
 
-	// 4. Invoke PostReady callbacks in registration order.
 	for _, fn := range a.postReadyFns {
 		fn()
 	}
 
-	// 5. Block until OS signal or shutdown.Trigger().
 	shutdown.Wait()
 
-	// 6. Close custom components in LIFO order.
+	// Single LIFO close covers all components including env and log.
+	// Close order: custom components → log → env (env.Close is a no-op).
 	closeAll(closeStack)
-
-	// 7. Close env (no-op for koanf singleton).
-	a.envComp.Close()
-
-	// 8. Close log absolutely last — flushes async write buffer.
-	a.logComp.Close()
 }
 
 // closeAll closes phases in LIFO order. Parallel phases close concurrently.
