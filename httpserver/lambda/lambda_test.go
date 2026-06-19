@@ -24,11 +24,11 @@ import (
 )
 
 // -----------------------------------------------------------------------
-// Runner — interface compliance
+// IRunner — interface compliance
 // -----------------------------------------------------------------------
 
-func TestNewHttpServer_ImplementsRunner(t *testing.T) {
-	var _ httpserver.Runner = lambdarunner.NewHttpServer()
+func TestNewHttpServer_ImplementsIRunner(t *testing.T) {
+	var _ httpserver.IRunner = lambdarunner.NewHttpServer()
 }
 
 func TestNewHttpServer_ReturnsNonNil(t *testing.T) {

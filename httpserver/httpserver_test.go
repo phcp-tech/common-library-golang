@@ -58,7 +58,7 @@ func newTestHandler() http.Handler {
 func TestConfig_Resolve_DefaultsApplied(t *testing.T) {
 	cfg := httpserver.Config{Port: "8080"} // all durations are zero
 	runner := httpserver.NewHttpServer(cfg)
-	// Verify NewHttpServer does not panic and returns a non-nil Runner.
+	// Verify NewHttpServer does not panic and returns a non-nil IRunner.
 	if runner == nil {
 		t.Fatal("NewHttpServer() returned nil runner")
 	}

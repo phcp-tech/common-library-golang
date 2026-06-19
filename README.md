@@ -81,7 +81,7 @@ go test ./... -cover -timeout 60s
 | Network | [`httpclient`](#httpclient--resty-http-client) | `.../common-library-golang/httpclient` | Resty-based HTTP client with retry, JWT auth, and JSON helpers |
 | Network | [`httpclient/retryable`](#httpclientretryable--retryable-http-client) | `.../common-library-golang/httpclient/retryable` | hashicorp/go-retryablehttp wrapper returning standard *http.Client |
 | Network | [`httpserver`](#httpserver--production-httphttps-server) | `.../common-library-golang/httpserver` | Production HTTP/HTTPS server with timeouts and graceful shutdown |
-| Network | [`httpserver/lambda`](#httpserverlambda--aws-lambda-adapter) | `.../common-library-golang/httpserver/lambda` | AWS Lambda adapter implementing httpserver.Runner (explicit opt-in) |
+| Network | [`httpserver/lambda`](#httpserverlambda--aws-lambda-adapter) | `.../common-library-golang/httpserver/lambda` | AWS Lambda adapter implementing httpserver.IRunner (explicit opt-in) |
 
 ---
 
@@ -985,7 +985,7 @@ It wraps `http.Server` directly (not `gin.Run()`) to provide:
 - **TLS 1.2+ with strong cipher suites** — activated when `CrtFile` and `KeyFile` are set
 - **Graceful shutdown** — `Shutdown(ctx)` drains in-flight requests before stopping
 
-The `Runner` interface unifies HTTP and Lambda modes so the composition root
+The `IRunner` interface unifies HTTP and Lambda modes so the composition root
 selects the backend and the rest of the application code is unchanged.
 
 ```go
@@ -1016,7 +1016,7 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 
 ## httpserver/lambda — AWS Lambda Adapter
 
-Implements `httpserver.Runner` for AWS Lambda via
+Implements `httpserver.IRunner` for AWS Lambda via
 [aws-lambda-go-api-proxy](https://github.com/awslabs/aws-lambda-go-api-proxy).
 It bridges `APIGatewayProxyRequest` events to any `http.Handler` (including
 `*gin.Engine`) with no handler changes required.
@@ -1031,7 +1031,7 @@ import (
 )
 
 // Composition root selects the runner based on the deployment environment.
-var runner httpserver.Runner
+var runner httpserver.IRunner
 if isLambda {
     runner = lambdarunner.NewHttpServer()
 } else {

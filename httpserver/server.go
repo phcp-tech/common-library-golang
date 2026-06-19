@@ -22,19 +22,19 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Compile-time check that httpRunner implements httpserver.Runner.
-var _ Runner = (*httpRunner)(nil)
+// Compile-time check that httpRunner implements httpserver.IRunner.
+var _ IRunner = (*httpRunner)(nil)
 
-// httpRunner implements Runner for plain HTTP and HTTPS servers.
+// httpRunner implements IRunner for plain HTTP and HTTPS servers.
 type httpRunner struct {
 	cfg    Config
 	server *http.Server
 }
 
-// NewHttpServer returns a plain HTTP/HTTPS Runner configured by cfg.
+// NewHttpServer returns a plain HTTP/HTTPS IRunner configured by cfg.
 // Zero-value duration fields in cfg fall back to the package defaults.
 // For AWS Lambda mode import and use the httpserver/lambda subpackage instead.
-func NewHttpServer(cfg Config) Runner {
+func NewHttpServer(cfg Config) IRunner {
 	return &httpRunner{cfg: cfg.resolve()}
 }
 
