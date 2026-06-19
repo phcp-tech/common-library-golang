@@ -182,7 +182,7 @@ func Authenticate() gin.HandlerFunc {
 				c.Set("userInfo", userInfo)
 			}
 		} else {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ResponseMessage{Code: http.StatusUnauthorized, Message: "bad authorization string"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ResponseMessage{Code: http.StatusUnauthorized, Message: "access unauthorized"})
 			return
 		}
 

@@ -45,6 +45,7 @@ func loadFromEnv() httpserver.IRunner {
 		slog.Info("Http server is running under AWS-LAMBDA")
 		return lambda.NewHttpServer()
 	}
+
 	port := env.Env().String("http.server.port")
 	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", port))
 	return httpserver.NewHttpServer(httpserver.Config{Port: port})
