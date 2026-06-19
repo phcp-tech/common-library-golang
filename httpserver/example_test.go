@@ -34,7 +34,7 @@
 //
 // # Composition-root pattern
 //
-// The [Runner] interface is identical for both modes, so the composition root
+// The [IRunner] interface is identical for both modes, so the composition root
 // (application.go) is the only place that needs to know which runner to create.
 // All other code just calls runner.Start / runner.Shutdown:
 //
@@ -101,12 +101,12 @@ func ExampleNewHttpServer_customTimeouts() {
 	// true
 }
 
-// ExampleRunner_Start shows how Start is used in the standard server loop.
+// ExampleIRunner_Start shows how Start is used in the standard server loop.
 // Start blocks until the server is stopped by a Shutdown call or a fatal error.
 // It must be called in a goroutine so the rest of the application can continue.
 // Start returns nil after a clean shutdown triggered by Shutdown().
 // Port "0" lets the OS assign a free port automatically.
-func ExampleRunner_Start() {
+func ExampleIRunner_Start() {
 	runner := httpserver.NewHttpServer(httpserver.Config{Port: "0"})
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -131,11 +131,11 @@ func ExampleRunner_Start() {
 	// stopped cleanly
 }
 
-// ExampleRunner_Shutdown shows the recommended composition-root pattern:
+// ExampleIRunner_Shutdown shows the recommended composition-root pattern:
 // start the server in a goroutine and shut it down gracefully on signal.
 // Shutdown waits for in-flight requests to complete until ctx is cancelled.
 // Port "0" lets the OS assign a free port automatically.
-func ExampleRunner_Shutdown() {
+func ExampleIRunner_Shutdown() {
 	runner := httpserver.NewHttpServer(httpserver.Config{Port: "0"})
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

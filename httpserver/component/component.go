@@ -35,12 +35,12 @@ var _ bootstrap.IComponent = (*httpComponent)(nil)
 
 type httpComponent struct {
 	handler func() http.Handler
-	runner  httpserver.Runner
+	runner  httpserver.IRunner
 }
 
-// loadFromEnv creates an HTTP server Runner from the koanf env singleton.
-// It reads app.runmode and http.server.port, returning the appropriate Runner.
-func loadFromEnv() httpserver.Runner {
+// loadFromEnv creates an HTTP server IRunner from the koanf env singleton.
+// It reads app.runmode and http.server.port, returning the appropriate IRunner.
+func loadFromEnv() httpserver.IRunner {
 	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
 		slog.Info("Http server is running under AWS-LAMBDA")
 		return lambda.NewHttpServer()

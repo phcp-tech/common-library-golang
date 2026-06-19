@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package lambda implements httpserver.Runner for AWS Lambda deployments.
+// Package lambda implements httpserver.IRunner for AWS Lambda deployments.
 // Import this sub-package only in services that run on AWS Lambda — importing
 // it pulls in the AWS Lambda SDK dependencies. Services that run as plain
 // HTTP servers should use the parent httpserver package directly.
@@ -29,17 +29,17 @@ import (
 	"github.com/phcp-tech/common-library-golang/httpserver"
 )
 
-// Compile-time check that lambdaRunner implements httpserver.Runner.
-var _ httpserver.Runner = (*lambdaRunner)(nil)
+// Compile-time check that lambdaRunner implements httpserver.IRunner.
+var _ httpserver.IRunner = (*lambdaRunner)(nil)
 
-// lambdaRunner implements httpserver.Runner for AWS Lambda.
+// lambdaRunner implements httpserver.IRunner for AWS Lambda.
 // It bridges the Lambda APIGatewayProxyRequest event to a standard http.Handler
 // via aws-lambda-go-api-proxy/httpadapter, so any http.Handler (including
 // *gin.Engine) can be used without modification.
 type lambdaRunner struct{}
 
-// NewHttpServer returns an httpserver.Runner for AWS Lambda deployments.
-func NewHttpServer() httpserver.Runner { return &lambdaRunner{} }
+// NewHttpServer returns an httpserver.IRunner for AWS Lambda deployments.
+func NewHttpServer() httpserver.IRunner { return &lambdaRunner{} }
 
 // Start registers handler with the Lambda runtime and blocks until the process
 // is terminated by AWS. It always returns nil.

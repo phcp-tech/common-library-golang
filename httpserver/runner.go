@@ -19,14 +19,14 @@ import (
 	"net/http"
 )
 
-// Runner abstracts a server that can be started and gracefully stopped.
+// IRunner abstracts a server that can be started and gracefully stopped.
 // The two concrete implementations are:
 //   - httpRunner (this package) — plain HTTP/HTTPS server
 //   - httpserver/lambda.NewHttpServer() — AWS Lambda adapter (unexported lambdaRunner)
 //
 // Import httpserver/lambda only when Lambda support is required; it carries
 // the AWS SDK dependencies and does not affect callers that only need HTTP.
-type Runner interface {
+type IRunner interface {
 	// Start starts the server and blocks until it is stopped.
 	// Returns nil after a graceful shutdown; returns a non-nil error on failure.
 	Start(handler http.Handler) error
