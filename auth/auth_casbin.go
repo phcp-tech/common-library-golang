@@ -59,10 +59,9 @@ func InitCasbin(fs bool, configModel string, configPolicy string) error {
 // If any role fails the check the request is rejected with HTTP 403 Forbidden.
 func Authorize() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		//Method 1: If a Role in the Roles group is approved, permission can be granted, but its use is now deprecated. //var pass bool = false
+		//Method 2: If one role in the Roles group fails the test, the permission cannot be granted. //var pass bool = true
 		var pass bool = true
-
-		//Method 1:Roles组中有一个Role通过就可以获得授权，废弃使用。//var pass bool = false
-		//Method 2:Roles组中有一个Role不通过就不可以获得授权。 //var pass bool = true
 		userInfo := c.MustGet("userInfo").(dto.LoginUser)
 		for _, role := range userInfo.Roles {
 			if result, _ := instance.Enforce(role, c.Request.RequestURI, c.Request.Method); !result {

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/phcp-tech/common-library-golang/env"
+	"github.com/phcp-tech/common-library-golang/httpserver"
 	"github.com/phcp-tech/common-library-golang/httpserver/component"
 )
 
@@ -96,4 +97,38 @@ func TestComponent_Close_AfterInit(t *testing.T) {
 	}
 	time.Sleep(20 * time.Millisecond) // let server goroutine fail with invalid port
 	c.Close()                         // must not panic; covers ctx/defer/Shutdown/slog.Info
+}
+
+// TestComponentWithRunner_UsesProvidedFactory verifies that ComponentWithRunner
+// calls the supplied factory function during Init() instead of the default
+// loadFromEnv. A custom factory returning a real server on port "0" (OS-assigned)
+// is used so the runner is non-nil and Init() succeeds.
+func TestComponentWithRunner_UsesProvidedFactory(t *testing.T) {
+	var factoryCalled bool
+	factory := func() httpserver.IRunner {
+		factoryCalled = true
+		return httpserver.NewHttpServer(httpserver.Config{Port: "0"})
+	}
+
+	c := component.ComponentWithRunner(func() http.Handler { return http.NewServeMux() }, factory)
+	if err := c.Init(); err != nil {
+		t.Fatalf("ComponentWithRunner().Init() = %v, want nil", err)
+	}
+	if !factoryCalled {
+		t.Error("factory was not called during Init()")
+	}
+	time.Sleep(20 * time.Millisecond)
+	c.Close()
+}
+
+// TestComponentWithRunner_ReturnsNonNil verifies that ComponentWithRunner
+// returns a non-nil IComponent.
+func TestComponentWithRunner_ReturnsNonNil(t *testing.T) {
+	c := component.ComponentWithRunner(
+		func() http.Handler { return http.NewServeMux() },
+		func() httpserver.IRunner { return httpserver.NewHttpServer(httpserver.Config{Port: "0"}) },
+	)
+	if c == nil {
+		t.Error("ComponentWithRunner() returned nil")
+	}
 }

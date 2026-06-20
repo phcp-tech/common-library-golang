@@ -68,7 +68,8 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`redis/component`](#bootstrap-component-packages) | `.../common-library-golang/redis/component` | `IComponent` adapter for the `redis` package |
 | Bootstrap | [`dbsqlc/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/postgres/component` | `IComponent` adapter for the PostgreSQL pool |
 | Bootstrap | [`dbsqlc/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/sqlite/component` | `IComponent` adapter for the SQLite connection |
-| Bootstrap | [`httpserver/component`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/component` | `IComponent` adapter for the HTTP server |
+| Bootstrap | [`httpserver/component`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/component` | `IComponent` adapter for the HTTP server; `ComponentWithRunner` for custom runner injection |
+| Bootstrap | [`httpserver/componentwithlambda`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/componentwithlambda` | `IComponent` adapter with AWS Lambda support; selects runner via `app.runmode` |
 | Database | [`redis`](#redis--redis-client) | `.../common-library-golang/redis` | Redis client (standalone and cluster) with connection pool and key scan utilities |
 | Database | [`dbsqlc/postgres`](#dbsqlcpostgres--postgresql-connection-pool) | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
 | Database | [`dbsqlc/sqlite`](#dbsqlcsqlite--sqlite-connection) | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
@@ -587,7 +588,8 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `redis/component` | `redis.clusters`, `redis.database`, `redis.password` |
 | `dbsqlc/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.pool.*` |
 | `dbsqlc/sqlite/component` | `db.sqlite.path` |
-| `httpserver/component` | `app.runmode`, `http.server.port` |
+| `httpserver/component` | `http.server.port` |
+| `httpserver/componentwithlambda` | `app.runmode` (`"aws_lambda"` → Lambda runner), `http.server.port` (other modes) |
 
 ---
 

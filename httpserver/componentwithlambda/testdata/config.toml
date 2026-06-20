@@ -1,0 +1,8 @@
+[app.env]
+prefix = "TEST_"
+
+[app]
+runmode = ""
+
+[http.server]
+port = "99999"
