@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/phcp-tech/common-library-golang/httpserver"
 	httpComp "github.com/phcp-tech/common-library-golang/httpserver/component"
 )
 
@@ -38,6 +39,32 @@ import (
 //	Add(httpComp.Component(func() http.Handler { return router }))
 func ExampleComponent() {
 	c := httpComp.Component(func() http.Handler { return http.NewServeMux() })
+	fmt.Println(c != nil)
+	// Output:
+	// true
+}
+
+// ExampleComponentWithRunner shows how to supply a custom runner factory.
+// Use this when the deployment target determines the runner type at runtime —
+// for example, when Lambda support is required (see httpserver/componentwithlambda
+// for the ready-made Lambda-aware component).
+//
+//	httpComp.ComponentWithRunner(
+//	    func() http.Handler { return router },
+//	    func() httpserver.IRunner {
+//	        if isLambda {
+//	            return lambda.NewHttpServer()
+//	        }
+//	        return httpserver.NewHttpServer(httpserver.Config{Port: port})
+//	    },
+//	)
+func ExampleComponentWithRunner() {
+	c := httpComp.ComponentWithRunner(
+		func() http.Handler { return http.NewServeMux() },
+		func() httpserver.IRunner {
+			return httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
+		},
+	)
 	fmt.Println(c != nil)
 	// Output:
 	// true

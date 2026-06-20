@@ -21,12 +21,10 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
-	"strings"
 
 	"github.com/phcp-tech/common-library-golang/bootstrap"
 	"github.com/phcp-tech/common-library-golang/env"
 	"github.com/phcp-tech/common-library-golang/httpserver"
-	"github.com/phcp-tech/common-library-golang/httpserver/lambda"
 	"github.com/phcp-tech/common-library-golang/shutdown"
 )
 
@@ -35,17 +33,13 @@ var _ bootstrap.IComponent = (*httpComponent)(nil)
 
 type httpComponent struct {
 	handler func() http.Handler
+	factory func() httpserver.IRunner
 	runner  httpserver.IRunner
 }
 
 // loadFromEnv creates an HTTP server IRunner from the koanf env singleton.
 // It reads app.runmode and http.server.port, returning the appropriate IRunner.
 func loadFromEnv() httpserver.IRunner {
-	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
-		slog.Info("Http server is running under AWS-LAMBDA")
-		return lambda.NewHttpServer()
-	}
-
 	port := env.Env().String("http.server.port")
 	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", port))
 	return httpserver.NewHttpServer(httpserver.Config{Port: port})
@@ -54,7 +48,7 @@ func loadFromEnv() httpserver.IRunner {
 func (h *httpComponent) Name() string { return "httpserver" }
 
 func (h *httpComponent) Init() error {
-	h.runner = loadFromEnv()
+	h.runner = h.factory()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -84,6 +78,15 @@ func (h *httpComponent) Close() {
 	slog.Info("Http server has been shutdown")
 }
 
+// ComponentWithRunner wraps the HTTP server as a bootstrap.IComponent using a
+// custom runner factory. Use this when the caller needs to control how the
+// IRunner is created — for example, to inject a Lambda runner.
+//
+// Prefer [Component] for plain HTTP/HTTPS deployments.
+func ComponentWithRunner(handler func() http.Handler, factory func() httpserver.IRunner) bootstrap.IComponent {
+	return &httpComponent{handler: handler, factory: factory}
+}
+
 // Component wraps the HTTP server as a bootstrap.IComponent.
 //
 // handler is a lazy provider called during Init() to obtain the http.Handler
@@ -94,11 +97,11 @@ func (h *httpComponent) Close() {
 // Typical usage with a bridge variable in main:
 //
 //	var router *gin.Engine
-//	Add(gin.Component(origins, func(r *gin.Engine) {
+//	Add(ginComp.Component(func(r *gin.Engine) {
 //	    router = r
 //	    adapter.Mount(r)
 //	})).
-//	Add(component.Component(func() http.Handler { return router }))
+//	Add(httpComp.Component(func() http.Handler { return router }))
 func Component(handler func() http.Handler) bootstrap.IComponent {
-	return &httpComponent{handler: handler}
+	return ComponentWithRunner(handler, loadFromEnv)
 }
