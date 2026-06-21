@@ -95,6 +95,6 @@ func ExampleHealthChecker() {
 	fmt.Println(results[0].Name)
 	fmt.Println(results[0].Status == health.StatusUnhealthy) // true — Default() is nil
 	// Output:
-	// postgres
+	// database
 	// true
 }

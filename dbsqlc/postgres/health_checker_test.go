@@ -36,8 +36,8 @@ func TestHealthChecker_NoPool(t *testing.T) {
 	checker := postgres.HealthChecker()
 	result := checker(context.Background())
 
-	if result.Name != "postgres" {
-		t.Errorf("result.Name = %q, want %q", result.Name, "postgres")
+	if result.Name != "database" {
+		t.Errorf("result.Name = %q, want %q", result.Name, "database")
 	}
 	if result.Status != health.StatusUnhealthy {
 		t.Errorf("result.Status = %d, want StatusUnhealthy (%d)", result.Status, health.StatusUnhealthy)
