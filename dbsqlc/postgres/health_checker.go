@@ -30,6 +30,6 @@ func HealthChecker() health.Checker {
 		if Default() != nil && Default().Ping(ctx) == nil {
 			status = health.StatusHealthy
 		}
-		return health.Result{Name: "postgres", Status: status}
+		return health.Result{Name: "database", Status: status}
 	}
 }
