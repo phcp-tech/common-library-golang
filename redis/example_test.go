@@ -17,8 +17,10 @@ package redis_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/phcp-tech/common-library-golang/health"
 	"github.com/phcp-tech/common-library-golang/redis"
 )
 
@@ -111,4 +113,16 @@ func ExampleRedisClient_GetKeysCount() {
 	defer cli.Close()
 
 	_, _ = cli.GetKeysCount(context.Background(), "session:*")
+}
+
+// ExampleHealthChecker shows how to wire HealthChecker into a [health.Check] call
+// for a /health HTTP endpoint.
+// In test environments with no reachable Redis server, the Checker reports StatusUnhealthy.
+func ExampleHealthChecker() {
+	results := health.Check(context.Background(), redis.HealthChecker())
+	fmt.Println(results[0].Name)
+	fmt.Println(results[0].Status == health.StatusUnhealthy) // true — no reachable Redis
+	// Output:
+	// redis
+	// true
 }

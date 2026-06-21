@@ -3,3 +3,8 @@ prefix = "TEST_"
 
 [log]
 level = "info"
+file.path = "testdata/testlog.tmp"
+file.max.size = 1
+file.max.backups = 1
+file.max.age = 1
+file.compress = false

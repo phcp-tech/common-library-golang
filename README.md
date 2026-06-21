@@ -54,7 +54,8 @@ go test ./... -cover -timeout 60s
 |-------|---------|-------------|-------------|
 | Basic | [`env`](#env--configuration-management) | `.../common-library-golang/env` | TOML config + environment variable loader |
 | Basic | [`log`](#log--structured-logging) | `.../common-library-golang/log` | Structured JSON logger with file rotation and ringbuf |
-| Basic | [`app`](#app--application-utilities) | `.../common-library-golang/app` | Application health check, and version metadata |
+| Basic | [`health`](#health--composable-health-checks) | `.../common-library-golang/health` | Composable health-check aggregator for `/health` endpoints |
+| Basic | [`version`](#version--application-version-metadata) | `.../common-library-golang/version` | Application version and build metadata for `/version` endpoints |
 | Basic | [`shutdown`](#shutdown--graceful-shutdown) | `.../common-library-golang/shutdown` | Block until OS signal or programmatic trigger, then continue for cleanup |
 | Basic | [`ringbuf`](#ringbuf--ring-buffers) | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
@@ -155,34 +156,64 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 
 ---
 
-## app — Application Utilities
+## health — Composable Health Checks
 
-Lightweight helpers for application health checks, version metadata. All functions read from `env.Env()` and require
-`env.InitEnv` to be called once at application startup.
-
-### Health endpoint
-
-```go
-// Returns Health{Name, Status} where Status is 2 when PostgreSQL is reachable,
-// 0 when it is not. Intended for a /health HTTP endpoint.
-h := app.GetHealth()
-if h.Status == 2 {
-    c.JSON(200, h)
-} else {
-    c.JSON(503, h)
-}
-```
-
-### Version endpoint
+Interface-based health-check aggregator for `/health` HTTP endpoints.
+Each infrastructure package supplies a `Checker` that owns its own component
+name and reachability status; `Check` runs all checkers and returns their
+combined results.
 
 ```go
-// Returns Version{Name, Version, Environment, GoVersion, BuildInfo} populated
-// from env config and the embedded Go build info. Intended for a /version endpoint.
-v := app.GetVersion()
-c.JSON(200, v)
+import (
+    "github.com/phcp-tech/common-library-golang/health"
+    db    "github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
+    cache "github.com/phcp-tech/common-library-golang/redis"
+)
+
+// Compose any number of checkers in a /health handler.
+router.GET("/health", func(c *gin.Context) {
+    c.JSON(http.StatusOK, health.Check(
+        c.Request.Context(),
+        db.HealthChecker(),
+        cache.HealthChecker(),
+    ))
+})
+// JSON response: [{"name":"postgres","status":1},{"name":"redis","status":1}]
 ```
 
-See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/app#pkg-examples).
+| Constant | Value | Meaning |
+|---|---|---|
+| `health.StatusHealthy` | `1` | Component is reachable |
+| `health.StatusUnhealthy` | `0` | Component is unreachable or not initialised |
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/health#pkg-examples).
+
+---
+
+## version — Application Version Metadata
+
+Returns application version and build metadata for `/version` HTTP endpoints.
+Reads `app.name`, `app.version`, and `app.env.value` from `env.Env()`, and
+populates `GoVersion` / `BuildInfo` from the embedded Go build info.
+Requires `env.InitEnv` to be called at application startup.
+
+```go
+import "github.com/phcp-tech/common-library-golang/version"
+
+router.GET("/version", func(c *gin.Context) {
+    c.JSON(http.StatusOK, version.Get())
+})
+// JSON response:
+// {
+//   "name": "my-service",
+//   "version": "1.2.3",
+//   "environment": "production",
+//   "goVersion": "go1.26.1",
+//   "buildInfo": "v1.2.3"
+// }
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/version#pkg-examples).
 
 ---
 
@@ -634,6 +665,21 @@ n, err := cli.GetKeysCount(ctx, "session:*")
 
 Implements the singleton pattern via `InitDefault` / `Default`.
 
+### Health check
+
+`HealthChecker()` returns a [`health.Checker`](#health--composable-health-checks) that pings the default client.
+Reports `StatusUnhealthy` when no client has been initialised or when the ping fails.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/health"
+    "github.com/phcp-tech/common-library-golang/redis"
+)
+
+results := health.Check(c.Request.Context(), redis.HealthChecker())
+// → []health.Result{{Name: "redis", Status: health.StatusHealthy}}
+```
+
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/redis#pkg-examples).
 
 ---
@@ -669,6 +715,21 @@ pool := postgres.Default() // *pgxpool.Pool, pass to sqlc Queries
 ```
 
 For cases that require multiple pools, use `NewPostgres` directly instead of the singleton.
+
+### Health check
+
+`HealthChecker()` returns a [`health.Checker`](#health--composable-health-checks) that pings the default pool.
+Reports `StatusUnhealthy` when no pool has been initialised or when the ping fails.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/health"
+    db "github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
+)
+
+results := health.Check(c.Request.Context(), db.HealthChecker())
+// → []health.Result{{Name: "postgres", Status: health.StatusHealthy}}
+```
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/postgres#pkg-examples).
 

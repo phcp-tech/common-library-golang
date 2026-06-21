@@ -16,9 +16,11 @@
 package postgres_test
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
+	"github.com/phcp-tech/common-library-golang/health"
 )
 
 // ExampleNewPostgres shows the typical usage of NewPostgres.
@@ -83,4 +85,16 @@ func ExampleInitDefault() {
 	// Output:
 	// false
 	// false
+}
+
+// ExampleHealthChecker shows how to wire HealthChecker into a [health.Check] call
+// for a /health HTTP endpoint.
+// When the default pool has not been initialised, the Checker reports StatusUnhealthy.
+func ExampleHealthChecker() {
+	results := health.Check(context.Background(), postgres.HealthChecker())
+	fmt.Println(results[0].Name)
+	fmt.Println(results[0].Status == health.StatusUnhealthy) // true — Default() is nil
+	// Output:
+	// postgres
+	// true
 }
