@@ -148,12 +148,12 @@ func TestGetMetricsNumCPUMatchesRuntime(t *testing.T) {
 // with the expected "Xd Xh Xm Xs" format.
 func TestGetMetricsAgeReadableIsNonEmpty(t *testing.T) {
 	result := GetMetrics()
-	val, found := findMetric(result, "ageReadable")
+	val, found := findMetric(result, "age")
 	if !found {
-		t.Fatal("GetMetrics() missing ageReadable")
+		t.Fatal("GetMetrics() missing age")
 	}
 	if val == "" {
-		t.Error("ageReadable metric must not be empty")
+		t.Error("age metric must not be empty")
 	}
 	// The age format produced by libTime.GetAge is "Xd Xh Xm Xs"
 	// Verify it contains 'd', 'h', 'm', 's' as format markers.
@@ -166,7 +166,7 @@ func TestGetMetricsAgeReadableIsNonEmpty(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("ageReadable value %q missing expected marker '%c'", val, marker)
+			t.Errorf("age value %q missing expected marker '%c'", val, marker)
 		}
 	}
 }
@@ -224,7 +224,7 @@ func TestGetMetricsAllValuesAreNonEmpty(t *testing.T) {
 // TestGetMetricsReturnedSliceHasExactLength verifies that the slice contains
 // exactly the 11 documented metrics.
 func TestGetMetricsReturnedSliceHasExactLength(t *testing.T) {
-	const expectedLen = 13
+	const expectedLen = 12
 	result := GetMetrics()
 	if len(result) != expectedLen {
 		t.Errorf("GetMetrics() slice length: expected %d, got %d", expectedLen, len(result))

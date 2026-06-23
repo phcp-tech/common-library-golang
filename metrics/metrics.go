@@ -56,7 +56,6 @@ func GetMetrics() []NameValue {
 		{Name: "memoryRequest", Value: strconv.FormatInt(memoryRequest, 10)},
 		{Name: "memoryLimit", Value: strconv.FormatInt(memoryLimit, 10)},
 		// process age
-		{Name: "age", Value: strconv.FormatInt(time.Now().Unix()-_startTime, 10)},
-		{Name: "ageReadable", Value: GetAge(_startTime)},
+		{Name: "age", Value: GetAge(_startTime)},
 	}
 }
