@@ -22,6 +22,7 @@ type LoginUser struct {
 	TokenType string   `json:"tokenType,omitempty"` // token purpose: "access" or "refresh"
 	UserId    uint64   `json:"userId"`
 	Username  string   `json:"username"`
+	OrgId     uint64   `json:"orgId"`
 	ProductId uint64   `json:"productId"`
 	Roles     []string `json:"roles"`
 }

@@ -15,6 +15,8 @@
 package sqlite_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/phcp-tech/common-library-golang/dbsqlc/sqlite"
@@ -167,5 +169,36 @@ func TestSingleton_Lifecycle(t *testing.T) {
 	}
 	if sqlite.Default() != firstDB {
 		t.Error("second InitDefault must not replace the existing instance")
+	}
+}
+
+func TestNewSQLite_CreateParentDir(t *testing.T) {
+	tmp := t.TempDir()
+	dbFile := filepath.Join(tmp, "nested", "data", "sqlite.db")
+	parent := filepath.Dir(dbFile)
+
+	// ensure parent does not exist before call
+	_ = os.RemoveAll(parent)
+
+	db, err := sqlite.NewSQLite(&sqlite.Config{Path: dbFile})
+	if err != nil {
+		t.Fatalf("NewSQLite error = %v", err)
+	}
+	defer db.Close()
+
+	// parent directory should be created
+	if fi, err := os.Stat(parent); err != nil {
+		t.Fatalf("expected parent dir created, stat error: %v", err)
+	} else if !fi.IsDir() {
+		t.Fatalf("parent exists but is not a dir: %s", parent)
+	}
+
+	// database file should exist
+	if _, err := os.Stat(dbFile); err != nil {
+		t.Fatalf("expected db file created, stat error: %v", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		t.Errorf("Ping() after NewSQLite = %v", err)
 	}
 }
