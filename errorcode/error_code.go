@@ -25,17 +25,17 @@ const (
 // Pre-defined ResponseMessage error values for common token and server errors.
 var (
 	// ErrorNotFound is returned when the requested resource does not exist.
-	ErrorNotFound = &dto.ResponseMessage{404, "record not found", nil}
+	ErrorNotFound = &dto.ResponseMessage{Code: 404, Message: "record not found", Data: nil}
 	// ErrorNoToken is returned when no token is present in the request.
-	ErrorNoToken = &dto.ResponseMessage{400, "token does not define", nil}
+	ErrorNoToken = &dto.ResponseMessage{Code: 400, Message: "token does not define", Data: nil}
 	// ErrorBadToken is returned when the provided token is malformed or invalid.
-	ErrorBadToken = &dto.ResponseMessage{400, "token error", nil}
+	ErrorBadToken = &dto.ResponseMessage{Code: 400, Message: "token error", Data: nil}
 	// ErrorExpiredToken is returned when the provided token has expired.
-	ErrorExpiredToken = &dto.ResponseMessage{401, "token expired", nil}
+	ErrorExpiredToken = &dto.ResponseMessage{Code: 401, Message: "token expired", Data: nil}
 	// ErrorPermissionToken is returned when the token lacks the required permission.
-	ErrorPermissionToken = &dto.ResponseMessage{403, "token has no permission", nil}
+	ErrorPermissionToken = &dto.ResponseMessage{Code: 403, Message: "token has no permission", Data: nil}
 	// ErrorInternalServer is returned for unexpected server-side errors.
-	ErrorInternalServer = &dto.ResponseMessage{500, "internal server error", nil}
+	ErrorInternalServer = &dto.ResponseMessage{Code: 500, Message: "internal server error", Data: nil}
 	// ErrorDatabase is returned when a database operation fails.
-	ErrorDatabase = &dto.ResponseMessage{500, "database error", nil}
+	ErrorDatabase = &dto.ResponseMessage{Code: 500, Message: "database error", Data: nil}
 )

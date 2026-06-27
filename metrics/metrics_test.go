@@ -144,9 +144,9 @@ func TestGetMetricsNumCPUMatchesRuntime(t *testing.T) {
 	}
 }
 
-// TestGetMetricsAgeIsNonEmpty verifies that the age metric is a non-empty string
+// TestGetMetricsAgeReadableIsNonEmpty verifies that the age metric is a non-empty string
 // with the expected "Xd Xh Xm Xs" format.
-func TestGetMetricsAgeIsNonEmpty(t *testing.T) {
+func TestGetMetricsAgeReadableIsNonEmpty(t *testing.T) {
 	result := GetMetrics()
 	val, found := findMetric(result, "age")
 	if !found {

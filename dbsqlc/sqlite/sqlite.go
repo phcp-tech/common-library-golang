@@ -17,6 +17,9 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -35,6 +38,33 @@ type Config struct {
 //
 //	conf := &Config{Path: "file:app.db?_journal_mode=WAL&_foreign_keys=on"}
 func NewSQLite(conf *Config) (*sql.DB, error) {
+	// ensure parent directory exists for file-based DB paths
+	if conf != nil && conf.Path != "" {
+		p := conf.Path
+		// skip in-memory variants
+		if p != ":memory:" {
+			var fp string
+			if strings.HasPrefix(p, "file:") {
+				s := strings.SplitN(p[5:], "?", 2)[0]
+				if s != "" && !strings.HasPrefix(s, ":memory") {
+					fp = s
+				}
+			} else {
+				fp = p
+			}
+
+			// sqlite can create db file automaticlly but can't create folder automaticlly
+			if fp != "" {
+				dir := filepath.Dir(fp)
+				if dir != "." && dir != "" {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						return nil, fmt.Errorf("create db dir: %w", err)
+					}
+				}
+			}
+		}
+	}
+
 	db, err := sql.Open("sqlite", conf.Path)
 	if err != nil {
 		return nil, err
