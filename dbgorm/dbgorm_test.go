@@ -19,15 +19,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
 	"github.com/phcp-tech/common-library-golang/dbgorm/sqlite"
 	dbsqlite "github.com/phcp-tech/common-library-golang/dbgorm/sqlite"
+	"github.com/phcp-tech/common-library-golang/dto"
 	"github.com/phcp-tech/common-library-golang/health"
 
 	"gorm.io/gorm"
@@ -186,30 +184,6 @@ func TestFirstWhereDeleteWhereScopesAndRawSQL(t *testing.T) {
 	}
 }
 
-func TestAutoMigrateHonorsEnabledFlag(t *testing.T) {
-	ctx := context.Background()
-	db := openTestDB(t)
-
-	type auditRecord struct {
-		ID        uint `gorm:"primaryKey"`
-		CreatedAt time.Time
-	}
-
-	if err := dbgorm.AutoMigrate(ctx, db, dbgorm.MigrateOptions{}, &auditRecord{}); err != nil {
-		t.Fatalf("disabled migrate should be nil: %v", err)
-	}
-	if db.Migrator().HasTable(&auditRecord{}) {
-		t.Fatalf("disabled migrate should not create table")
-	}
-
-	if err := dbgorm.AutoMigrate(ctx, db, dbgorm.MigrateOptions{Enabled: true}, &auditRecord{}); err != nil {
-		t.Fatalf("enabled migrate: %v", err)
-	}
-	if !db.Migrator().HasTable(&auditRecord{}) {
-		t.Fatalf("enabled migrate should create table")
-	}
-}
-
 // -----------------------------------------------------------------------
 // mockItem — minimal GORM model used by the tests below.
 // -----------------------------------------------------------------------
@@ -353,6 +327,114 @@ func TestPaginate_DefaultPageWhenZero(t *testing.T) {
 // OrderBy — edge cases
 // -----------------------------------------------------------------------
 
+func TestSortSql(t *testing.T) {
+	tests := []struct {
+		name          string
+		para          dto.PageParameter
+		wantSQL       string
+		wantSort      string
+		wantDirection string
+	}{
+		{
+			name:          "defaults to id ascending",
+			para:          dto.PageParameter{},
+			wantSQL:       " ORDER BY id ASC",
+			wantSort:      "id",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "normalizes descending direction",
+			para:          dto.PageParameter{Sort: "name", Direction: " desc "},
+			wantSQL:       " ORDER BY name DESC",
+			wantSort:      "name",
+			wantDirection: "DESC",
+		},
+		{
+			name:          "invalid direction falls back to ascending",
+			para:          dto.PageParameter{Sort: "created_at", Direction: "random"},
+			wantSQL:       " ORDER BY created_at ASC",
+			wantSort:      "created_at",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "charset wraps sort column",
+			para:          dto.PageParameter{Sort: "name", Direction: "DESC", Charset: "UTF8"},
+			wantSQL:       " ORDER BY convert_to(name,'UTF8')  DESC",
+			wantSort:      "name",
+			wantDirection: "DESC",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dbgorm.SortSql(&tt.para)
+			if got != tt.wantSQL {
+				t.Fatalf("SortSql() = %q, want %q", got, tt.wantSQL)
+			}
+			if tt.para.Sort != tt.wantSort {
+				t.Fatalf("SortSql() Sort = %q, want %q", tt.para.Sort, tt.wantSort)
+			}
+			if tt.para.Direction != tt.wantDirection {
+				t.Fatalf("SortSql() Direction = %q, want %q", tt.para.Direction, tt.wantDirection)
+			}
+		})
+	}
+}
+
+func TestPageSql(t *testing.T) {
+	tests := []struct {
+		name      string
+		para      dto.PageParameter
+		wantSQL   string
+		wantPage  int
+		wantLimit int
+	}{
+		{
+			name:      "calculates limit and offset",
+			para:      dto.PageParameter{Page: 3, Limit: 25},
+			wantSQL:   " LIMIT 25 OFFSET 50",
+			wantPage:  3,
+			wantLimit: 25,
+		},
+		{
+			name:      "limit minus one disables pagination",
+			para:      dto.PageParameter{Page: 2, Limit: -1},
+			wantSQL:   "",
+			wantPage:  2,
+			wantLimit: -1,
+		},
+		{
+			name:      "defaults invalid page and limit",
+			para:      dto.PageParameter{},
+			wantSQL:   " LIMIT 20 OFFSET 0",
+			wantPage:  1,
+			wantLimit: 20,
+		},
+		{
+			name:      "caps limit at max",
+			para:      dto.PageParameter{Page: 2, Limit: 200},
+			wantSQL:   " LIMIT 100 OFFSET 100",
+			wantPage:  2,
+			wantLimit: 100,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dbgorm.PageSql(&tt.para)
+			if got != tt.wantSQL {
+				t.Fatalf("PageSql() = %q, want %q", got, tt.wantSQL)
+			}
+			if tt.para.Page != tt.wantPage {
+				t.Fatalf("PageSql() Page = %d, want %d", tt.para.Page, tt.wantPage)
+			}
+			if tt.para.Limit != tt.wantLimit {
+				t.Fatalf("PageSql() Limit = %d, want %d", tt.para.Limit, tt.wantLimit)
+			}
+		})
+	}
+}
+
 func TestOrderBy_UnknownColumn(t *testing.T) {
 	db := openLocalDB(t)
 	db.AutoMigrate(&mockItem{}) //nolint:errcheck
@@ -383,120 +465,5 @@ func TestOrderBy_OtherDirection(t *testing.T) {
 	}
 	if results[0].Name != "a" {
 		t.Errorf("OrderBy random direction: first = %q, want %q", results[0].Name, "a")
-	}
-}
-
-// -----------------------------------------------------------------------
-// AutoMigrate — all paths
-// -----------------------------------------------------------------------
-
-func TestAutoMigrate_Disabled(t *testing.T) {
-	db := openLocalDB(t)
-	err := dbgorm.AutoMigrate(context.Background(), db, dbgorm.MigrateOptions{Enabled: false}, &mockItem{})
-	if err != nil {
-		t.Errorf("AutoMigrate disabled: error = %v, want nil", err)
-	}
-	if db.Migrator().HasTable(&mockItem{}) {
-		t.Error("AutoMigrate disabled: table must not be created")
-	}
-}
-
-func TestAutoMigrate_NoMockFile(t *testing.T) {
-	db := openLocalDB(t)
-	// InsertMock=true but MockFile="" → no-op after migration
-	err := dbgorm.AutoMigrate(context.Background(), db,
-		dbgorm.MigrateOptions{Enabled: true, InsertMock: true, MockFile: ""},
-		&mockItem{})
-	if err != nil {
-		t.Errorf("AutoMigrate no mock file: error = %v, want nil", err)
-	}
-}
-
-func TestAutoMigrate_MockFileNotFound(t *testing.T) {
-	db := openLocalDB(t)
-	err := dbgorm.AutoMigrate(context.Background(), db,
-		dbgorm.MigrateOptions{Enabled: true, InsertMock: true, MockFile: "nonexistent.sql"},
-		&mockItem{})
-	if err == nil {
-		t.Error("AutoMigrate with missing mock file: want error, got nil")
-	}
-}
-
-func TestAutoMigrate_WithMockSQL(t *testing.T) {
-	db := openLocalDB(t)
-	if err := db.AutoMigrate(&mockItem{}); err != nil {
-		t.Fatalf("AutoMigrate model: %v", err)
-	}
-
-	// Write two INSERT statements separated by the default separator "----".
-	mockSQL := "INSERT INTO mock_items (name) VALUES ('alpha')\n----\nINSERT INTO mock_items (name) VALUES ('beta')"
-	f := filepath.Join(t.TempDir(), "mock.sql")
-	if err := os.WriteFile(f, []byte(mockSQL), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	err := dbgorm.AutoMigrate(context.Background(), db,
-		dbgorm.MigrateOptions{Enabled: true, InsertMock: true, MockFile: f},
-		&mockItem{})
-	if err != nil {
-		t.Fatalf("AutoMigrate with mock SQL: %v", err)
-	}
-
-	var count int64
-	db.Model(&mockItem{}).Count(&count)
-	if count != 2 {
-		t.Errorf("expected 2 rows after mock SQL, got %d", count)
-	}
-}
-
-func TestAutoMigrate_CustomSeparator(t *testing.T) {
-	db := openLocalDB(t)
-	if err := db.AutoMigrate(&mockItem{}); err != nil {
-		t.Fatalf("AutoMigrate model: %v", err)
-	}
-
-	mockSQL := "INSERT INTO mock_items (name) VALUES ('x');;;INSERT INTO mock_items (name) VALUES ('y')"
-	f := filepath.Join(t.TempDir(), "mock.sql")
-	if err := os.WriteFile(f, []byte(mockSQL), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	err := dbgorm.AutoMigrate(context.Background(), db,
-		dbgorm.MigrateOptions{Enabled: true, InsertMock: true, MockFile: f, Separator: ";;;"},
-		&mockItem{})
-	if err != nil {
-		t.Fatalf("AutoMigrate custom separator: %v", err)
-	}
-
-	var count int64
-	db.Model(&mockItem{}).Count(&count)
-	if count != 2 {
-		t.Errorf("expected 2 rows after custom separator mock, got %d", count)
-	}
-}
-
-func TestAutoMigrate_SkipsCommentsAndBlanks(t *testing.T) {
-	db := openLocalDB(t)
-	if err := db.AutoMigrate(&mockItem{}); err != nil {
-		t.Fatalf("AutoMigrate model: %v", err)
-	}
-
-	// Comment segment is skipped; blank segment is skipped; only INSERT executes.
-	mockSQL := "-- this is a comment\n----\n\n----\nINSERT INTO mock_items (name) VALUES ('only')"
-	f := filepath.Join(t.TempDir(), "mock.sql")
-	if err := os.WriteFile(f, []byte(mockSQL), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	if err := dbgorm.AutoMigrate(context.Background(), db,
-		dbgorm.MigrateOptions{Enabled: true, InsertMock: true, MockFile: f},
-		&mockItem{}); err != nil {
-		t.Fatalf("AutoMigrate skip comments: %v", err)
-	}
-
-	var count int64
-	db.Model(&mockItem{}).Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 row (comment skipped), got %d", count)
 	}
 }

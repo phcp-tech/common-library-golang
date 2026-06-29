@@ -16,10 +16,17 @@ package dbgorm
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
+	"github.com/phcp-tech/common-library-golang/dto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+)
+
+const (
+	defaultPageLimit = 20
+	maxPageLimit     = 100
 )
 
 // FirstByID returns the first record of type T matching the primary key id.
@@ -58,11 +65,6 @@ func DeleteWhere(ctx context.Context, db *gorm.DB, model any, query any, args ..
 	return db.WithContext(ctx).Where(query, args...).Delete(model).Error
 }
 
-const (
-	defaultPageLimit = 20
-	maxPageLimit     = 100
-)
-
 // Paginate returns a GORM scope that applies limit and offset pagination.
 func Paginate(page, limit int) func(*gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
@@ -100,4 +102,59 @@ func OrderBy(allowed map[string]string, sort, direction string) func(*gorm.DB) *
 			Desc:   desc,
 		})
 	}
+}
+
+// SortSql builds an ORDER BY SQL clause from the sort fields in para.
+// Defaults to ordering by "id ASC" when Sort or Direction are empty.
+// If para.Charset is set, the sort column is wrapped with convert_to for locale-aware ordering.
+func SortSql(para *dto.PageParameter) string {
+	// default sort by Id
+	if para.Sort == "" {
+		para.Sort = "id"
+	}
+
+	// default direction is ASC, not errors if illegal
+	para.Direction = strings.ToUpper(strings.TrimSpace(para.Direction))
+	if para.Direction == "" {
+		para.Direction = "ASC"
+	} else if para.Direction != "ASC" && para.Direction != "DESC" {
+		para.Direction = "ASC"
+	}
+
+	// order by charset
+	var sqlstr string = ""
+	if para.Charset != "" {
+		// MySQL function is CONVERT
+		//sqlstr += " ORDER BY CONVERT(" + para.Sort + " USING " + para.Charset + ") " + para.Direction
+		sqlstr += " ORDER BY convert_to(" + para.Sort + ",'" + para.Charset + "') " + " " + para.Direction
+	} else {
+		sqlstr += " ORDER BY " + para.Sort + " " + para.Direction
+	}
+	return sqlstr
+}
+
+// PageSql builds a LIMIT/OFFSET SQL clause from the pagination fields in para.
+// When Limit is -1, all records are returned without a LIMIT clause.
+// Defaults to page 1 and the maxPageLimit when values are unset or invalid.
+func PageSql(para *dto.PageParameter) string {
+	var sqlstr string = ""
+	if para.Limit == -1 {
+		return sqlstr
+	}
+
+	if para.Page <= 0 {
+		para.Page = 1
+	}
+	if para.Limit <= 0 {
+		para.Limit = defaultPageLimit
+	}
+	if para.Limit > maxPageLimit {
+		para.Limit = maxPageLimit
+	}
+
+	if para.Page >= 1 && para.Limit >= 1 {
+		sqlstr += " LIMIT " + strconv.Itoa(para.Limit) + " OFFSET " + strconv.Itoa((para.Page-1)*para.Limit)
+	}
+
+	return sqlstr
 }

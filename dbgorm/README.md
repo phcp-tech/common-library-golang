@@ -332,28 +332,6 @@ err := dbgorm.ScanRaw(
 )
 ```
 
-## AutoMigrate
-
-```go
-err := dbgorm.AutoMigrate(ctx, db, dbgorm.MigrateOptions{
-    Enabled: true,
-}, &User{}, &Order{})
-```
-
-Mock SQL can be executed after migration:
-
-```go
-err := dbgorm.AutoMigrate(ctx, db, dbgorm.MigrateOptions{
-    Enabled:    true,
-    InsertMock: true,
-    MockFile:   "testdata/mock.sql",
-    Separator:  "----",
-}, &User{})
-```
-
-`AutoMigrate` does not read environment variables. Applications are responsible
-for deciding when migration and mock data are enabled.
-
 ## Error Handling
 
 Use `IsNotFound` to check for GORM's not-found condition:

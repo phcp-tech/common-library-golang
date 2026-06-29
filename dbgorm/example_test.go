@@ -26,7 +26,7 @@ import (
 
 // exProduct is a minimal GORM model used by the example functions.
 type exProduct struct {
-	ID       uint   `gorm:"primaryKey"`
+	ID       uint `gorm:"primaryKey"`
 	Name     string
 	Category string
 }
@@ -309,28 +309,4 @@ func ExampleScanRaw_multipleRows() {
 	// true
 	// 3
 	// bolt
-}
-
-// -----------------------------------------------------------------------
-// AutoMigrate
-// -----------------------------------------------------------------------
-
-// ExampleAutoMigrate shows how to run GORM auto-migration conditionally.
-// When Enabled is false the call is a no-op.
-func ExampleAutoMigrate() {
-	ctx := context.Background()
-	dialector, _ := sqlite.Dialector(&sqlite.Config{Path: ":memory:"})
-	db, _ := libgorm.Open(dialector, &libgorm.GormConfig{MaxOpenConns: 1})
-
-	type ticket struct {
-		ID    uint `gorm:"primaryKey"`
-		Title string
-	}
-
-	err := libgorm.AutoMigrate(ctx, db, libgorm.MigrateOptions{Enabled: true}, &ticket{})
-	fmt.Println(err == nil)
-	fmt.Println(db.Migrator().HasTable(&ticket{}))
-	// Output:
-	// true
-	// true
 }

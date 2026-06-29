@@ -67,11 +67,24 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`auth/component`](#bootstrap-component-packages) | `.../common-library-golang/auth/component` | `IComponent` adapter for the `auth` (casbin) package |
 | Bootstrap | [`gin/component`](#bootstrap-component-packages) | `.../common-library-golang/gin/component` | `IComponent` adapter for the `gin` engine |
 | Bootstrap | [`redis/component`](#bootstrap-component-packages) | `.../common-library-golang/redis/component` | `IComponent` adapter for the `redis` package |
+| Bootstrap | [`dbgorm/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/clickhouse/component` | `IComponent` adapter for the GORM ClickHouse connection (pings on Init) |
+| Bootstrap | [`dbgorm/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/mysql/component` | `IComponent` adapter for the GORM MySQL connection (pings on Init) |
+| Bootstrap | [`dbgorm/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/postgres/component` | `IComponent` adapter for the GORM PostgreSQL connection (pings on Init) |
+| Bootstrap | [`dbgorm/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/sqlite/component` | `IComponent` adapter for the GORM SQLite connection |
+| Bootstrap | [`dbsqlc/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/clickhouse/component` | `IComponent` adapter for the ClickHouse connection (lazy open) |
+| Bootstrap | [`dbsqlc/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/mysql/component` | `IComponent` adapter for the MySQL connection (sql.Open, lazy) |
 | Bootstrap | [`dbsqlc/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/postgres/component` | `IComponent` adapter for the PostgreSQL pool |
 | Bootstrap | [`dbsqlc/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/sqlite/component` | `IComponent` adapter for the SQLite connection |
 | Bootstrap | [`httpserver/component`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/component` | `IComponent` adapter for the HTTP server; `ComponentWithRunner` for custom runner injection |
 | Bootstrap | [`httpserver/componentwithlambda`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/componentwithlambda` | `IComponent` adapter with AWS Lambda support; selects runner via `app.runmode` |
 | Database | [`redis`](#redis--redis-client) | `.../common-library-golang/redis` | Redis client (standalone and cluster) with connection pool and key scan utilities |
+| Database | [`dbgorm/clickhouse`](#dbgormclickhouse--gorm-clickhouse) | `.../common-library-golang/dbgorm/clickhouse` | ClickHouse via GORM — eager ping on Open, shared process-wide `*gorm.DB` |
+| Database | [`dbgorm/mysql`](#dbgormmysql--gorm-mysql) | `.../common-library-golang/dbgorm/mysql` | MySQL via GORM — eager ping on Open, shared process-wide `*gorm.DB` |
+| Database | [`dbgorm/postgres`](#dbgormpostgres--gorm-postgresql) | `.../common-library-golang/dbgorm/postgres` | PostgreSQL via GORM — eager ping on Open, shared process-wide `*gorm.DB` |
+| Database | [`dbgorm/sqlite`](#dbgormsqlite--gorm-sqlite) | `.../common-library-golang/dbgorm/sqlite` | SQLite via GORM — embedded, no network, file auto-created on Open |
+| Database | [`dbgorm/sqlite/vfs`](#dbgormsqlitevfs--gorm-embedded-sqlite-via-vfs) | `.../common-library-golang/dbgorm/sqlite/vfs` | SQLite via GORM over embedded FS — binary-embedded read-only databases |
+| Database | [`dbsqlc/clickhouse`](#dbsqlcclickhouse--clickhouse-client) | `.../common-library-golang/dbsqlc/clickhouse` | ClickHouse native TCP client via clickhouse-go/v2 |
+| Database | [`dbsqlc/mysql`](#dbsqlcmysql--mysql-connection) | `.../common-library-golang/dbsqlc/mysql` | MySQL connection via standard `database/sql` and go-sql-driver |
 | Database | [`dbsqlc/postgres`](#dbsqlcpostgres--postgresql-connection-pool) | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
 | Database | [`dbsqlc/sqlite`](#dbsqlcsqlite--sqlite-connection) | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
 | Database | [`dbsqlc/sqlite/vfs`](#dbsqlcsqlitevfs--embedded-sqlite-via-vfs) | `.../common-library-golang/dbsqlc/sqlite/vfs` | SQLite over embedded FS via VFS (binary-embedded databases) |
@@ -617,6 +630,12 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `auth/component` | _(model and policy passed as constructor arguments)_ |
 | `gin/component` | `app.env.value`, `cors.allow.origins.prod`, `cors.allow.origins.dev` |
 | `redis/component` | `redis.clusters`, `redis.database`, `redis.password` |
+| `dbgorm/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
+| `dbgorm/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
+| `dbgorm/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
+| `dbgorm/sqlite/component` | `db.sqlite.path` |
+| `dbsqlc/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime` |
+| `dbsqlc/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbsqlc/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.pool.*` |
 | `dbsqlc/sqlite/component` | `db.sqlite.path` |
 | `httpserver/component` | `http.server.port` |
@@ -681,6 +700,330 @@ results := health.Check(c.Request.Context(), redis.HealthChecker())
 ```
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/redis#pkg-examples).
+
+
+---
+
+## dbgorm/clickhouse — GORM ClickHouse
+
+[GORM](https://gorm.io)-based ClickHouse adapter. GORM's driver **pings the server
+during `Open`** — `InitDefault` returns a non-nil error immediately when the database
+is unreachable, causing bootstrap to abort startup.
+The default instance is a process-wide `*gorm.DB` shared via `dbgorm.Default()` /
+`dbgorm.SetDefault()`.
+
+> **Note:** `PrepareStmt` is automatically disabled for ClickHouse because the driver
+> maps `Prepare()` to batch INSERT; it must be off for regular SELECT queries.
+> This is handled transparently inside `dbgorm.Open`.
+
+```go
+import (
+    dbgorm     "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/dbgorm/clickhouse"
+)
+
+err := clickhouse.InitDefault(&clickhouse.Config{
+    Host:     "localhost",
+    Port:     "9440",   // native TCP+TLS; use 8123/8443 for HTTP
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+db := dbgorm.Default() // *gorm.DB, ready for GORM operations
+```
+
+### Health check
+
+Use [`dbgorm.HealthChecker()`](#health--composable-health-checks) from the root package —
+the checker is dialect-agnostic and works with any driver initialised via `InitDefault`.
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), dbgorm.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbgorm/clickhouse#pkg-examples).
+
+---
+
+## dbgorm/mysql — GORM MySQL
+
+[GORM](https://gorm.io)-based MySQL adapter. Unlike `dbsqlc/mysql`, GORM's driver
+**pings the server during `Open`** — `InitDefault` returns a non-nil error immediately
+when the database is unreachable, which causes bootstrap to abort startup.
+The default instance is a process-wide `*gorm.DB` shared via `dbgorm.Default()` /
+`dbgorm.SetDefault()` (no `sync.Once` — can be replaced at runtime).
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/dbgorm/mysql"
+)
+
+// Open and store as the process-wide default.
+err := mysql.InitDefault(&mysql.Config{
+    Host:     "localhost",
+    Port:     "3306",
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err) // server was unreachable — GORM pinged on Open
+}
+
+db := dbgorm.Default() // *gorm.DB, ready for GORM operations
+```
+
+For cases that require multiple databases, use `NewMySQL` directly and store
+the returned `*gorm.DB` in explicit fields rather than the shared default.
+
+### Health check
+
+Use [`dbgorm.HealthChecker()`](#health--composable-health-checks) from the root package —
+the checker is dialect-agnostic and works with any driver initialised via `InitDefault`.
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), dbgorm.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbgorm/mysql#pkg-examples).
+
+---
+
+## dbgorm/postgres — GORM PostgreSQL
+
+[GORM](https://gorm.io)-based PostgreSQL adapter. GORM's driver **pings the server
+and runs `SHOW search_path` during `Open`** — `InitDefault` returns a non-nil error
+immediately when the database is unreachable, causing bootstrap to abort startup.
+Supports an optional `SearchPath` for schema isolation.
+The default instance is a process-wide `*gorm.DB` shared via `dbgorm.Default()` /
+`dbgorm.SetDefault()`.
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/dbgorm/postgres"
+)
+
+err := postgres.InitDefault(&postgres.Config{
+    Host:       "localhost",
+    Port:       "5432",
+    Database:   "mydb",
+    Username:   "user",
+    Password:   "pass",
+    SearchPath: "myschema", // optional
+})
+if err != nil {
+    log.Fatal(err) // server was unreachable
+}
+
+db := dbgorm.Default() // *gorm.DB, ready for GORM operations
+```
+
+### Health check
+
+Use [`dbgorm.HealthChecker()`](#health--composable-health-checks) from the root package —
+the checker is dialect-agnostic and works with any driver initialised via `InitDefault`.
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), dbgorm.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbgorm/postgres#pkg-examples).
+
+---
+
+## dbgorm/sqlite — GORM SQLite
+
+[GORM](https://gorm.io)-based SQLite adapter backed by
+[glebarez/sqlite](https://github.com/glebarez/sqlite) (pure Go, no CGO).
+SQLite is an **embedded** database — no network connection is involved.
+`InitDefault` opens (and auto-creates) the file; it fails only when the path is
+empty or the file cannot be created. `MaxOpenConns` is fixed at 1 to prevent
+`database is locked` errors under concurrent writes.
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    "github.com/phcp-tech/common-library-golang/dbgorm/sqlite"
+)
+
+// File-based database.
+err := sqlite.InitDefault(&sqlite.Config{
+    Path: "file:app.db?cache=shared",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+db := dbgorm.Default() // *gorm.DB, ready for GORM operations
+
+// In-memory database (tests, ephemeral data).
+db, _ := sqlite.NewSQLite(&sqlite.Config{
+    Path: "file::memory:?cache=shared",
+})
+```
+
+> **No HealthChecker:** SQLite is embedded — if it fails, the application is already broken.
+> A health endpoint for an embedded database provides no operational value.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbgorm/sqlite#pkg-examples).
+
+---
+
+## dbgorm/sqlite/vfs — GORM Embedded SQLite via VFS
+
+Opens a SQLite database **embedded inside the Go binary** using
+[modernc.org/sqlite/vfs](https://pkg.go.dev/modernc.org/sqlite/vfs) and Go's `embed.FS`.
+The embedded file must reside at `config/sqlite.db` inside the provided `embed.FS`.
+
+**Import this sub-package only when distributing a SQLite database as part of the binary.**
+For regular file-based databases use `dbgorm/sqlite` instead.
+
+`InitDefault` uses `sync.Once` — the first call wins; subsequent calls are silently ignored.
+
+```go
+import (
+    dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
+    sqlvfs "github.com/phcp-tech/common-library-golang/dbgorm/sqlite/vfs"
+)
+
+//go:embed config/sqlite.db
+var sqliteFS embed.FS
+
+// Open directly (no singleton).
+db, err := sqlvfs.New(&sqliteFS)
+
+// Or store as the process-wide default (sync.Once).
+if err := sqlvfs.InitDefault(&sqliteFS); err != nil {
+    log.Fatal(err)
+}
+db := dbgorm.Default() // *gorm.DB, ready for GORM operations
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbgorm/sqlite/vfs#pkg-examples).
+
+---
+
+## dbsqlc/clickhouse — ClickHouse Client
+
+Native TCP ClickHouse client backed by
+[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go).
+Returns `driver.Conn` — **not** `*sql.DB` — so it is intended for direct,
+high-performance native protocol access rather than sqlc code generation.
+
+> **Lazy open:** `clickhouse.Open` only configures the connection; the TCP dial
+> happens on the first operation (Ping/Query/etc.). `InitDefault` therefore always
+> returns nil. Use a `PreReady` step with `conn.Ping(ctx)` for an eager check.
+
+```go
+import "github.com/phcp-tech/common-library-golang/dbsqlc/clickhouse"
+
+// Singleton mode — call once at startup.
+err := clickhouse.InitDefault(&clickhouse.Config{
+    Host:     "localhost",
+    Port:     "9440", // native TCP+TLS
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+conn := clickhouse.Default() // driver.Conn, ready to use
+```
+
+### Health check
+
+`HealthChecker()` returns a [`health.Checker`](#health--composable-health-checks) that
+calls `conn.Ping(ctx)` on the default client.
+Reports `StatusUnhealthy` when no client has been initialised or when the ping fails.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/health"
+    "github.com/phcp-tech/common-library-golang/dbsqlc/clickhouse"
+)
+
+results := health.Check(c.Request.Context(), clickhouse.HealthChecker())
+// → []health.Result{{Name: "clickhouse", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/clickhouse#pkg-examples).
+
+---
+
+## dbsqlc/mysql — MySQL Connection
+
+Standard `database/sql` connection for use with [sqlc](https://sqlc.dev/) (`sql_package: "database/sql"`),
+backed by [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql).
+Connection pool settings (`MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime`, `ConnMaxIdletime`)
+are configurable via `Config` with sensible defaults.
+Implements the singleton pattern via `InitDefault` / `Default`.
+
+> **Note:** `sql.Open` is **lazy** — no connection is established during `InitDefault`.
+> `Init()` always returns nil. Use an explicit `PingContext` in a `PreReady` step
+> if an eager connectivity check is required at startup.
+
+```go
+import "github.com/phcp-tech/common-library-golang/dbsqlc/mysql"
+
+// Singleton mode: call once at startup.
+err := mysql.InitDefault(&mysql.Config{
+    Host:     "localhost",
+    Port:     "3306",
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+db := mysql.Default() // *sql.DB, pass to sqlc Queries
+```
+
+For cases that require multiple connections, use `NewMySQL` directly instead of the singleton.
+
+### Health check
+
+`HealthChecker()` returns a [`health.Checker`](#health--composable-health-checks) that pings the default connection.
+Reports `StatusUnhealthy` when no connection has been initialised or when the ping fails.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/health"
+    "github.com/phcp-tech/common-library-golang/dbsqlc/mysql"
+)
+
+results := health.Check(c.Request.Context(), mysql.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/mysql#pkg-examples).
 
 ---
 
@@ -760,6 +1103,9 @@ db := sqlite.Default() // *sql.DB, pass to sqlc Queries
 
 SQLite allows only one writer at a time. `NewSQLite` calls `SetMaxOpenConns(1)` automatically
 to prevent `database is locked` errors when WAL mode is not in use.
+
+> **No HealthChecker:** SQLite is embedded — if it fails, the application is already broken.
+> A health endpoint for an embedded database provides no operational value.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/sqlite#pkg-examples).
 
