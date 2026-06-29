@@ -136,6 +136,21 @@ func ExampleHealthChecker() {
 // Query helpers
 // -----------------------------------------------------------------------
 
+// ExampleCreate shows how to insert a new record and retrieve its auto-populated fields.
+func ExampleCreate() {
+	ctx := context.Background()
+	db := exDB()
+
+	created, err := libgorm.Create(ctx, db, &exProduct{Name: "chisel", Category: "tools"})
+	fmt.Println(err == nil)
+	fmt.Println(created.ID > 0) // primary key populated by the database
+	fmt.Println(created.Name)
+	// Output:
+	// true
+	// true
+	// chisel
+}
+
 // ExampleFirstByID shows how to fetch a record by primary key.
 // Returns gorm.ErrRecordNotFound when no row matches.
 func ExampleFirstByID() {

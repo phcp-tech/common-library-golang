@@ -20,6 +20,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// Create inserts record into the database and returns the created record.
+// The returned pointer reflects auto-populated fields (primary key, timestamps, etc.).
+func Create[T any](ctx context.Context, db *gorm.DB, record *T) (*T, error) {
+	if err := db.WithContext(ctx).Create(record).Error; err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
 // FirstByID returns the first record of type T matching the primary key id.
 func FirstByID[T any](ctx context.Context, db *gorm.DB, id any) (*T, error) {
 	var model T
@@ -70,4 +79,18 @@ func UpdateByID[T any](ctx context.Context, db *gorm.DB, id any, values any) err
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// GetCurrentId retrieves the maximum ID value from the table corresponding to model
+// using GORM (COALESCE(MAX(id), 0)). model must be a pointer to a model struct
+// (e.g., &Article{}). Returns the maximum ID and nil on success; returns 0 and nil
+// for an empty table; returns 0 and an error on database failure.
+func GetCurrentId[T any](ctx context.Context, db *gorm.DB) (uint64, error) {
+	var model T
+	var id uint64
+	err := db.WithContext(ctx).Model(&model).Select("COALESCE(MAX(id), 0)").Scan(&id).Error
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }

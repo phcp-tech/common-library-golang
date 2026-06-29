@@ -184,6 +184,22 @@ func TestFirstWhereDeleteWhereScopesAndRawSQL(t *testing.T) {
 	}
 }
 
+func TestCreate_Success(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	created, err := dbgorm.Create(ctx, db, &testUser{Name: "bob", Status: "active"})
+	if err != nil {
+		t.Fatalf("Create error = %v", err)
+	}
+	if created.ID == 0 {
+		t.Error("Create: expected auto-populated ID, got 0")
+	}
+	if created.Name != "bob" {
+		t.Errorf("Create: Name = %q, want %q", created.Name, "bob")
+	}
+}
+
 func TestUpdateByID_Success(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
