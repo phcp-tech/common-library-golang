@@ -363,6 +363,20 @@ func TestSortSql(t *testing.T) {
 			wantSort:      "name",
 			wantDirection: "DESC",
 		},
+		{
+			name:          "unsafe sort falls back to id",
+			para:          dto.PageParameter{Sort: "name; DROP TABLE users", Direction: "ASC"},
+			wantSQL:       " ORDER BY id ASC",
+			wantSort:      "id",
+			wantDirection: "ASC",
+		},
+		{
+			name:          "unsafe charset is ignored",
+			para:          dto.PageParameter{Sort: "name", Direction: "ASC", Charset: "UTF8'); DROP TABLE users; --"},
+			wantSQL:       " ORDER BY name ASC",
+			wantSort:      "name",
+			wantDirection: "ASC",
+		},
 	}
 
 	for _, tt := range tests {

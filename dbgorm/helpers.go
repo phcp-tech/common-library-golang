@@ -18,6 +18,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/phcp-tech/common-library-golang/dto"
 	"gorm.io/gorm"
@@ -109,7 +110,7 @@ func OrderBy(allowed map[string]string, sort, direction string) func(*gorm.DB) *
 // If para.Charset is set, the sort column is wrapped with convert_to for locale-aware ordering.
 func SortSql(para *dto.PageParameter) string {
 	// default sort by Id
-	if para.Sort == "" {
+	if !isSafeSQLIdentifierPath(para.Sort) {
 		para.Sort = "id"
 	}
 
@@ -123,7 +124,7 @@ func SortSql(para *dto.PageParameter) string {
 
 	// order by charset
 	var sqlstr string = ""
-	if para.Charset != "" {
+	if para.Charset != "" && isSafeSQLName(para.Charset) {
 		// MySQL function is CONVERT
 		//sqlstr += " ORDER BY CONVERT(" + para.Sort + " USING " + para.Charset + ") " + para.Direction
 		sqlstr += " ORDER BY convert_to(" + para.Sort + ",'" + para.Charset + "') " + " " + para.Direction
@@ -157,4 +158,29 @@ func PageSql(para *dto.PageParameter) string {
 	}
 
 	return sqlstr
+}
+
+func isSafeSQLIdentifierPath(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, part := range strings.Split(value, ".") {
+		if !isSafeSQLName(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func isSafeSQLName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		if r == '_' || unicode.IsLetter(r) || (i > 0 && unicode.IsDigit(r)) {
+			continue
+		}
+		return false
+	}
+	return true
 }
