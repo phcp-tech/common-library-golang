@@ -24,6 +24,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	sqliteMaxOpenConns = 4
+	sqliteMaxIdleConns = 2
+)
+
 // Config holds SQLite connection parameters.
 type Config struct {
 	// Path is the path to the SQLite database file, or ":memory:" for an in-memory database.
@@ -86,10 +91,10 @@ func NewSQLite(conf *Config) (*sql.DB, error) {
 	}
 
 	// SQLite allows only one writer at a time;
-	// without WAL mode, call SetMaxOpenConns(1) on the returned *sql.DB to prevent "database is locked" errors.
+	// without WAL mode, call SetMaxOpenConns(sqliteMaxOpenConns) on the returned *sql.DB to prevent "database is locked" errors.
 	// with WAL mode, multiple connections can read and write concurrently, so we can set a reasonable pool size.
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
+	db.SetMaxOpenConns(sqliteMaxOpenConns)
+	db.SetMaxIdleConns(sqliteMaxIdleConns)
 
 	return db, nil
 }
