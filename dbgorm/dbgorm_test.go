@@ -184,6 +184,34 @@ func TestFirstWhereDeleteWhereScopesAndRawSQL(t *testing.T) {
 	}
 }
 
+func TestUpdateByID_Success(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	created := testUser{Name: "alice", Status: "active"}
+	db.WithContext(ctx).Create(&created) //nolint:errcheck
+
+	err := dbgorm.UpdateByID[testUser](ctx, db, created.ID, map[string]any{"status": "inactive"})
+	if err != nil {
+		t.Fatalf("UpdateByID error = %v", err)
+	}
+
+	updated, _ := dbgorm.FirstByID[testUser](ctx, db, created.ID)
+	if updated.Status != "inactive" {
+		t.Errorf("Status = %q, want %q", updated.Status, "inactive")
+	}
+}
+
+func TestUpdateByID_NotFound(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	err := dbgorm.UpdateByID[testUser](ctx, db, 9999, map[string]any{"status": "x"})
+	if !dbgorm.IsNotFound(err) {
+		t.Errorf("expected ErrRecordNotFound, got %v", err)
+	}
+}
+
 // -----------------------------------------------------------------------
 // mockItem — minimal GORM model used by the tests below.
 // -----------------------------------------------------------------------

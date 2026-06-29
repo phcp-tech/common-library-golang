@@ -185,6 +185,53 @@ func ExampleDeleteByID() {
 	// true
 }
 
+// ExampleUpdateByID shows how to update specific columns of a record by primary key.
+// Pass a struct to update only non-zero fields, or a map[string]any to update
+// all specified keys regardless of zero value.
+func ExampleUpdateByID() {
+	ctx := context.Background()
+	db := exDB()
+	p := &exProduct{Name: "wrench", Category: "tools"}
+	db.Create(p)
+
+	// Update a single field using a map to avoid zero-value filtering.
+	err := libgorm.UpdateByID[exProduct](ctx, db, p.ID, map[string]any{"category": "hardware"})
+	fmt.Println(err == nil)
+
+	// Verify the update.
+	updated, _ := libgorm.FirstByID[exProduct](ctx, db, p.ID)
+	fmt.Println(updated.Category)
+
+	// Returns ErrRecordNotFound when no row matches.
+	fmt.Println(libgorm.IsNotFound(libgorm.UpdateByID[exProduct](ctx, db, 9999, map[string]any{"name": "x"})))
+	// Output:
+	// true
+	// hardware
+	// true
+}
+
+// ExampleUpdateByID_struct shows how to update using a struct value.
+// Only non-zero fields are written — zero values (empty string, 0, false, …)
+// are silently skipped. Use a map[string]any when zero values must be persisted.
+func ExampleUpdateByID_struct() {
+	ctx := context.Background()
+	db := exDB()
+	p := &exProduct{Name: "hammer", Category: "tools"}
+	db.Create(p)
+
+	// Only Category is non-zero, so only that column is updated.
+	err := libgorm.UpdateByID[exProduct](ctx, db, p.ID, exProduct{Category: "hand-tools"})
+	fmt.Println(err == nil)
+
+	updated, _ := libgorm.FirstByID[exProduct](ctx, db, p.ID)
+	fmt.Println(updated.Name)     // unchanged — Name was zero in the struct
+	fmt.Println(updated.Category) // updated
+	// Output:
+	// true
+	// hammer
+	// hand-tools
+}
+
 // ExampleDeleteWhere shows how to delete all records matching a condition.
 // Zero affected rows is treated as success.
 func ExampleDeleteWhere() {
