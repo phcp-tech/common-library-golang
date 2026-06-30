@@ -247,6 +247,48 @@ func ExampleUpdateByID_struct() {
 	// hand-tools
 }
 
+// ExampleUpdateWhere shows how to update all records matching a condition.
+// Zero affected rows is treated as success, consistent with DeleteWhere.
+func ExampleUpdateWhere() {
+	ctx := context.Background()
+	db := exDB()
+	db.Create(&exProduct{Name: "nail", Category: "fasteners"})
+	db.Create(&exProduct{Name: "bolt", Category: "fasteners"})
+	db.Create(&exProduct{Name: "brush", Category: "painting"})
+
+	// Promote all fasteners to the "hardware" category.
+	err := libgorm.UpdateWhere(ctx, db, &exProduct{}, map[string]any{"category": "hardware"}, "category = ?", "fasteners")
+	fmt.Println(err == nil)
+
+	var count int64
+	db.Model(&exProduct{}).Where("category = ?", "hardware").Count(&count)
+	fmt.Println(count) // nail + bolt
+	// Output:
+	// true
+	// 2
+}
+
+// ExampleUpdateWhere_struct shows how to pass a struct as values.
+// Only non-zero fields in the struct are written to the database.
+func ExampleUpdateWhere_struct() {
+	ctx := context.Background()
+	db := exDB()
+	db.Create(&exProduct{Name: "saw", Category: "tools"})
+	db.Create(&exProduct{Name: "drill", Category: "tools"})
+
+	// Category is the only non-zero field — Name is left unchanged.
+	err := libgorm.UpdateWhere(ctx, db, &exProduct{}, exProduct{Category: "power-tools"}, "name = ?", "drill")
+	fmt.Println(err == nil)
+
+	updated, _ := libgorm.FirstWhere[exProduct](ctx, db, "name = ?", "drill")
+	fmt.Println(updated.Name)
+	fmt.Println(updated.Category)
+	// Output:
+	// true
+	// drill
+	// power-tools
+}
+
 // ExampleDeleteWhere shows how to delete all records matching a condition.
 // Zero affected rows is treated as success.
 func ExampleDeleteWhere() {
@@ -371,4 +413,34 @@ func ExampleScanRaw_multipleRows() {
 	// true
 	// 3
 	// bolt
+}
+
+// -----------------------------------------------------------------------
+// AutoMigrate
+// -----------------------------------------------------------------------
+
+// ExampleAutoMigrate shows how to create database tables from GORM model structs.
+// Pass all models in a single call; AutoMigrate creates or updates each table in order.
+func ExampleAutoMigrate() {
+	ctx := context.Background()
+	dialector, _ := sqlite.Dialector(&sqlite.Config{Path: ":memory:"})
+	db, _ := libgorm.Open(dialector, &libgorm.GormConfig{MaxOpenConns: 1})
+
+	type Article struct {
+		ID    uint   `gorm:"primaryKey"`
+		Title string
+	}
+	type Tag struct {
+		ID   uint   `gorm:"primaryKey"`
+		Name string
+	}
+
+	err := libgorm.AutoMigrate(ctx, db, &Article{}, &Tag{})
+	fmt.Println(err == nil)
+	fmt.Println(db.Migrator().HasTable(&Article{}))
+	fmt.Println(db.Migrator().HasTable(&Tag{}))
+	// Output:
+	// true
+	// true
+	// true
 }

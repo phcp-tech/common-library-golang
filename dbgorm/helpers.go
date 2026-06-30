@@ -81,16 +81,10 @@ func UpdateByID[T any](ctx context.Context, db *gorm.DB, id any, values any) err
 	return nil
 }
 
-// GetCurrentId retrieves the maximum ID value from the table corresponding to model
-// using GORM (COALESCE(MAX(id), 0)). model must be a pointer to a model struct
-// (e.g., &Article{}). Returns the maximum ID and nil on success; returns 0 and nil
-// for an empty table; returns 0 and an error on database failure.
-func GetCurrentId[T any](ctx context.Context, db *gorm.DB) (uint64, error) {
-	var model T
-	var id uint64
-	err := db.WithContext(ctx).Model(&model).Select("COALESCE(MAX(id), 0)").Scan(&id).Error
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
+// UpdateWhere updates columns of all records for model matching query and args.
+// values may be a struct (only non-zero fields are updated) or a map[string]any
+// (all specified keys are updated regardless of zero value).
+// Zero affected rows is treated as success, consistent with [DeleteWhere].
+func UpdateWhere(ctx context.Context, db *gorm.DB, model any, values any, query any, args ...any) error {
+	return db.WithContext(ctx).Model(model).Where(query, args...).Updates(values).Error
 }
