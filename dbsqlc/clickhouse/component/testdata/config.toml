@@ -1,9 +1,0 @@
-[app.env]
-prefix = "TEST_"
-
-[db]
-host     = "127.0.0.1"
-port     = "19000"
-name     = "testdb"
-username = "testuser"
-password = "testpass"
