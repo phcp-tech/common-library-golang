@@ -71,10 +71,14 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`dbgorm/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/mysql/component` | `IComponent` adapter for the GORM MySQL connection (pings on Init) |
 | Bootstrap | [`dbgorm/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/postgres/component` | `IComponent` adapter for the GORM PostgreSQL connection (pings on Init) |
 | Bootstrap | [`dbgorm/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/sqlite/component` | `IComponent` adapter for the GORM SQLite connection |
-| Bootstrap | [`dbsqlc/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/clickhouse/component` | `IComponent` adapter for the ClickHouse connection (lazy open) |
 | Bootstrap | [`dbsqlc/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/mysql/component` | `IComponent` adapter for the MySQL connection (sql.Open, lazy) |
 | Bootstrap | [`dbsqlc/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/postgres/component` | `IComponent` adapter for the PostgreSQL pool |
 | Bootstrap | [`dbsqlc/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlc/sqlite/component` | `IComponent` adapter for the SQLite connection |
+| Bootstrap | [`dbsqlx/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlx/clickhouse/component` | `IComponent` adapter for the sqlx ClickHouse connection (pings on Init) |
+| Bootstrap | [`dbsqlx/clickhouse-native/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlx/clickhouse-native/component` | `IComponent` adapter for the native-driver ClickHouse connection (lazy open) |
+| Bootstrap | [`dbsqlx/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlx/mysql/component` | `IComponent` adapter for the sqlx MySQL connection (pings on Init) |
+| Bootstrap | [`dbsqlx/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlx/postgres/component` | `IComponent` adapter for the sqlx PostgreSQL connection (pings on Init) |
+| Bootstrap | [`dbsqlx/sqlite/component`](#bootstrap-component-packages) | `.../common-library-golang/dbsqlx/sqlite/component` | `IComponent` adapter for the sqlx SQLite connection |
 | Bootstrap | [`httpserver/component`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/component` | `IComponent` adapter for the HTTP server; `ComponentWithRunner` for custom runner injection |
 | Bootstrap | [`httpserver/componentwithlambda`](#bootstrap-component-packages) | `.../common-library-golang/httpserver/componentwithlambda` | `IComponent` adapter with AWS Lambda support; selects runner via `app.runmode` |
 | Database | [`redis`](#redis--redis-client) | `.../common-library-golang/redis` | Redis client (standalone and cluster) with connection pool and key scan utilities |
@@ -83,11 +87,16 @@ go test ./... -cover -timeout 60s
 | Database | [`dbgorm/postgres`](#dbgormpostgres--gorm-postgresql) | `.../common-library-golang/dbgorm/postgres` | PostgreSQL via GORM — eager ping on Open, shared process-wide `*gorm.DB` |
 | Database | [`dbgorm/sqlite`](#dbgormsqlite--gorm-sqlite) | `.../common-library-golang/dbgorm/sqlite` | SQLite via GORM — embedded, no network, file auto-created on Open |
 | Database | [`dbgorm/sqlite/vfs`](#dbgormsqlitevfs--gorm-embedded-sqlite-via-vfs) | `.../common-library-golang/dbgorm/sqlite/vfs` | SQLite via GORM over embedded FS — binary-embedded read-only databases |
-| Database | [`dbsqlc/clickhouse`](#dbsqlcclickhouse--clickhouse-client) | `.../common-library-golang/dbsqlc/clickhouse` | ClickHouse native TCP client via clickhouse-go/v2 |
 | Database | [`dbsqlc/mysql`](#dbsqlcmysql--mysql-connection) | `.../common-library-golang/dbsqlc/mysql` | MySQL connection via standard `database/sql` and go-sql-driver |
 | Database | [`dbsqlc/postgres`](#dbsqlcpostgres--postgresql-connection-pool) | `.../common-library-golang/dbsqlc/postgres` | PostgreSQL connection pool via pgx/v5 |
 | Database | [`dbsqlc/sqlite`](#dbsqlcsqlite--sqlite-connection) | `.../common-library-golang/dbsqlc/sqlite` | SQLite connection via pure-Go modernc driver |
 | Database | [`dbsqlc/sqlite/vfs`](#dbsqlcsqlitevfs--embedded-sqlite-via-vfs) | `.../common-library-golang/dbsqlc/sqlite/vfs` | SQLite over embedded FS via VFS (binary-embedded databases) |
+| Database | [`dbsqlx/clickhouse`](#dbsqlxclickhouse--sqlx-clickhouse) | `.../common-library-golang/dbsqlx/clickhouse` | ClickHouse via sqlx (clickhouse-go/v2 database/sql driver) — eager ping on Open, shared process-wide `*sqlx.DB` |
+| Database | [`dbsqlx/clickhouse-native`](#dbsqlxclickhouse-native--clickhouse-native-driver) | `.../common-library-golang/dbsqlx/clickhouse-native` | ClickHouse native TCP client via clickhouse-go/v2 — returns `driver.Conn`, not `*sqlx.DB` |
+| Database | [`dbsqlx/mysql`](#dbsqlxmysql--sqlx-mysql) | `.../common-library-golang/dbsqlx/mysql` | MySQL via sqlx — eager ping on Open, shared process-wide `*sqlx.DB` |
+| Database | [`dbsqlx/postgres`](#dbsqlxpostgres--sqlx-postgresql) | `.../common-library-golang/dbsqlx/postgres` | PostgreSQL via sqlx (pgx stdlib driver) — eager ping + `SHOW search_path` on Open |
+| Database | [`dbsqlx/sqlite`](#dbsqlxsqlite--sqlx-sqlite) | `.../common-library-golang/dbsqlx/sqlite` | SQLite via sqlx — embedded, no network, file auto-created on Open |
+| Database | [`dbsqlx/sqlite/vfs`](#dbsqlxsqlitevfs--sqlx-embedded-sqlite-via-vfs) | `.../common-library-golang/dbsqlx/sqlite/vfs` | SQLite via sqlx over embedded FS — binary-embedded read-only databases |
 | Network | [`network`](#network--network-utilities) | `.../common-library-golang/network` | Network utilities helpers |
 | Network | [`auth`](#auth--casbin-rbac-authorisation) | `.../common-library-golang/auth` | Casbin RBAC authorisation middleware for Gin |
 | Network | [`token`](#token--jwt-authentication) | `.../common-library-golang/token` | JWT access/refresh token creation, parsing, and Gin middleware |
@@ -634,10 +643,14 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `dbgorm/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbgorm/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbgorm/sqlite/component` | `db.sqlite.path` |
-| `dbsqlc/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime` |
 | `dbsqlc/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbsqlc/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.pool.*` |
 | `dbsqlc/sqlite/component` | `db.sqlite.path` |
+| `dbsqlx/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
+| `dbsqlx/clickhouse-native/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime` |
+| `dbsqlx/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
+| `dbsqlx/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
+| `dbsqlx/sqlite/component` | `db.sqlite.path` |
 | `httpserver/component` | `http.server.port` |
 | `httpserver/componentwithlambda` | `app.runmode` (`"aws_lambda"` → Lambda runner), `http.server.port` (other modes) |
 
@@ -927,55 +940,6 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 
 ---
 
-## dbsqlc/clickhouse — ClickHouse Client
-
-Native TCP ClickHouse client backed by
-[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go).
-Returns `driver.Conn` — **not** `*sql.DB` — so it is intended for direct,
-high-performance native protocol access rather than sqlc code generation.
-
-> **Lazy open:** `clickhouse.Open` only configures the connection; the TCP dial
-> happens on the first operation (Ping/Query/etc.). `InitDefault` therefore always
-> returns nil. Use a `PreReady` step with `conn.Ping(ctx)` for an eager check.
-
-```go
-import "github.com/phcp-tech/common-library-golang/dbsqlc/clickhouse"
-
-// Singleton mode — call once at startup.
-err := clickhouse.InitDefault(&clickhouse.Config{
-    Host:     "localhost",
-    Port:     "9440", // native TCP+TLS
-    Database: "mydb",
-    Username: "user",
-    Password: "pass",
-})
-if err != nil {
-    log.Fatal(err)
-}
-
-conn := clickhouse.Default() // driver.Conn, ready to use
-```
-
-### Health check
-
-`HealthChecker()` returns a [`health.Checker`](#health--composable-health-checks) that
-calls `conn.Ping(ctx)` on the default client.
-Reports `StatusUnhealthy` when no client has been initialised or when the ping fails.
-
-```go
-import (
-    "github.com/phcp-tech/common-library-golang/health"
-    "github.com/phcp-tech/common-library-golang/dbsqlc/clickhouse"
-)
-
-results := health.Check(c.Request.Context(), clickhouse.HealthChecker())
-// → []health.Result{{Name: "clickhouse", Status: health.StatusHealthy}}
-```
-
-See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/clickhouse#pkg-examples).
-
----
-
 ## dbsqlc/mysql — MySQL Connection
 
 Standard `database/sql` connection for use with [sqlc](https://sqlc.dev/) (`sql_package: "database/sql"`),
@@ -1140,6 +1104,286 @@ For cases that require multiple VFS connections, use `New` directly instead of t
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlc/sqlite/vfs#pkg-examples).
 
 ---
+
+## dbsqlx/clickhouse — sqlx ClickHouse
+
+ClickHouse adapter built on [github.com/vinovest/sqlx](https://github.com/vinovest/sqlx),
+via [clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go)'s `database/sql`
+driver (registers as `"clickhouse"`) — the same driver mode used internally by
+`gorm.io/driver/clickhouse`. `dbsqlx.Open` **pings the server eagerly** —
+`InitDefault` returns a non-nil error immediately when the database is unreachable,
+which causes bootstrap to abort startup.
+The default instance is a process-wide `*sqlx.DB` shared via `dbsqlx.Default()` /
+`dbsqlx.SetDefault()`.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/dbsqlx/clickhouse"
+)
+
+err := clickhouse.InitDefault(&clickhouse.Config{
+    Host:     "localhost",
+    Port:     "9440", // native TCP+TLS
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err) // server was unreachable — Open pinged eagerly
+}
+
+db := dbsqlx.Default() // *sqlx.DB, ready for Get/Select/Exec
+```
+
+### Health check
+
+Use [`dbsqlx.HealthChecker()`](#health--composable-health-checks) from the root package —
+the checker is dialect-agnostic and works with any driver initialised via `InitDefault`.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), dbsqlx.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlx/clickhouse#pkg-examples).
+
+---
+
+## dbsqlx/clickhouse-native — ClickHouse Native Driver
+
+Native TCP ClickHouse client backed by
+[clickhouse-go/v2](https://github.com/ClickHouse/clickhouse-go).
+Returns `driver.Conn` — **not** `*sqlx.DB` — so it does not integrate with
+`dbsqlx.Open`/`Default`/`Exec`/`Transact` from the parent `dbsqlx` package. Use
+this package for direct, high-performance native protocol access; use
+[`dbsqlx/clickhouse`](#dbsqlxclickhouse--sqlx-clickhouse) instead when you want
+the shared `*sqlx.DB` conveniences.
+
+> **Lazy open:** `clickhousenative.NewClickHouse` only configures the connection; the TCP
+> dial happens on the first operation (Ping/Query/etc.). `InitDefault` therefore
+> always returns nil. Use a `PreReady` step with `conn.Ping(ctx)` for an eager check.
+
+```go
+import "github.com/phcp-tech/common-library-golang/dbsqlx/clickhouse-native"
+
+// Singleton mode — call once at startup.
+err := clickhousenative.InitDefault(&clickhousenative.Config{
+    Host:     "localhost",
+    Port:     "9440", // native TCP+TLS
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+conn := clickhousenative.Default() // driver.Conn, ready to use
+```
+
+### Health check
+
+`HealthChecker()` returns a [`health.Checker`](#health--composable-health-checks) that
+calls `conn.Ping(ctx)` on the default client.
+Reports `StatusUnhealthy` when no client has been initialised or when the ping fails.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx/clickhouse-native"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), clickhousenative.HealthChecker())
+// → []health.Result{{Name: "clickhouse-native", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlx/clickhouse-native#pkg-examples).
+
+---
+
+## dbsqlx/mysql — sqlx MySQL
+
+MySQL adapter built on [github.com/vinovest/sqlx](https://github.com/vinovest/sqlx)
+(a `database/sql` extension with reflection-based struct scanning and Go generics),
+via the `go-sql-driver/mysql` driver. Unlike `dbsqlc/mysql`, `dbsqlx.Open` **pings the
+server eagerly** — `InitDefault` returns a non-nil error immediately when the
+database is unreachable, which causes bootstrap to abort startup.
+The default instance is a process-wide `*sqlx.DB` shared via `dbsqlx.Default()` /
+`dbsqlx.SetDefault()` (no `sync.Once` — can be replaced at runtime).
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/dbsqlx/mysql"
+)
+
+// Open and store as the process-wide default.
+err := mysql.InitDefault(&mysql.Config{
+    Host:     "localhost",
+    Port:     "3306",
+    Database: "mydb",
+    Username: "user",
+    Password: "pass",
+})
+if err != nil {
+    log.Fatal(err) // server was unreachable — Open pinged eagerly
+}
+
+db := dbsqlx.Default() // *sqlx.DB, ready for Get/Select/Exec
+```
+
+For cases that require multiple databases, use `NewMySQL` directly and store
+the returned `*sqlx.DB` in explicit fields rather than the shared default.
+
+### Health check
+
+Use [`dbsqlx.HealthChecker()`](#health--composable-health-checks) from the root package —
+the checker is dialect-agnostic and works with any driver initialised via `InitDefault`.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), dbsqlx.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlx/mysql#pkg-examples).
+
+---
+
+## dbsqlx/postgres — sqlx PostgreSQL
+
+PostgreSQL adapter built on [github.com/vinovest/sqlx](https://github.com/vinovest/sqlx),
+via the `pgx/v5/stdlib` driver (registers as `"pgx"` with `database/sql`).
+`dbsqlx.Open` **pings the server and runs `SHOW search_path` eagerly** —
+`InitDefault` returns a non-nil error immediately when the database is unreachable.
+Supports an optional `SearchPath` for schema isolation.
+The default instance is a process-wide `*sqlx.DB` shared via `dbsqlx.Default()` /
+`dbsqlx.SetDefault()`.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/dbsqlx/postgres"
+)
+
+err := postgres.InitDefault(&postgres.Config{
+    Host:       "localhost",
+    Port:       "5432",
+    Database:   "mydb",
+    Username:   "user",
+    Password:   "pass",
+    SearchPath: "myschema", // optional
+})
+if err != nil {
+    log.Fatal(err) // server was unreachable
+}
+
+db := dbsqlx.Default() // *sqlx.DB, ready for Get/Select/Exec
+```
+
+### Health check
+
+Use [`dbsqlx.HealthChecker()`](#health--composable-health-checks) from the root package —
+the checker is dialect-agnostic and works with any driver initialised via `InitDefault`.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/health"
+)
+
+results := health.Check(c.Request.Context(), dbsqlx.HealthChecker())
+// → []health.Result{{Name: "database", Status: health.StatusHealthy}}
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlx/postgres#pkg-examples).
+
+---
+
+## dbsqlx/sqlite — sqlx SQLite
+
+SQLite adapter built on [github.com/vinovest/sqlx](https://github.com/vinovest/sqlx),
+via the pure-Go [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) driver
+(no CGO). SQLite is an **embedded** database — no network connection is involved.
+`InitDefault` opens (and auto-creates) the file and its parent directory; it fails
+only when the path is empty or the file cannot be created. Every connection gets
+the standard PRAGMA settings (WAL, foreign keys, busy timeout, 32 MB cache).
+`MaxOpenConns` is fixed at 4 / `MaxIdleConns` at 2 — SQLite allows only one writer
+at a time, so a larger pool provides no benefit even under WAL.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    "github.com/phcp-tech/common-library-golang/dbsqlx/sqlite"
+)
+
+// File-based database.
+err := sqlite.InitDefault(&sqlite.Config{
+    Path: "file:app.db?cache=shared",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+db := dbsqlx.Default() // *sqlx.DB, ready for Get/Select/Exec
+
+// In-memory database (tests, ephemeral data).
+db, _ = sqlite.NewSQLite(&sqlite.Config{
+    Path: "file::memory:?cache=shared",
+})
+```
+
+> **No HealthChecker:** SQLite is embedded — if it fails, the application is already broken.
+> A health endpoint for an embedded database provides no operational value.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlx/sqlite#pkg-examples).
+
+---
+
+## dbsqlx/sqlite/vfs — sqlx Embedded SQLite via VFS
+
+Opens a SQLite database **embedded inside the Go binary** using
+[modernc.org/sqlite/vfs](https://pkg.go.dev/modernc.org/sqlite/vfs) and Go's `embed.FS`.
+The embedded file must reside at `config/sqlite.db` inside the provided `embed.FS`.
+
+**Import this sub-package only when distributing a SQLite database as part of the binary.**
+For regular file-based databases use `dbsqlx/sqlite` instead.
+
+`InitDefault` uses `sync.Once` — the first call wins; subsequent calls are silently ignored.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/dbsqlx"
+    sqlvfs "github.com/phcp-tech/common-library-golang/dbsqlx/sqlite/vfs"
+)
+
+//go:embed config/sqlite.db
+var sqliteFS embed.FS
+
+// Open directly (no singleton).
+db, err := sqlvfs.New(&sqliteFS)
+
+// Or store as the process-wide default (sync.Once).
+if err := sqlvfs.InitDefault(&sqliteFS); err != nil {
+    log.Fatal(err)
+}
+db = dbsqlx.Default() // *sqlx.DB, ready for Get/Select/Exec
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/dbsqlx/sqlite/vfs#pkg-examples).
+
+---
+
 ## network — Network Utilities
 
 Helpers for request IP extraction, local interface inspection, and IPv4 ↔ uint32 conversion.

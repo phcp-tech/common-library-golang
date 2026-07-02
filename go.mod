@@ -32,6 +32,7 @@ require (
 	github.com/samber/slog-formatter v1.3.0
 	github.com/samber/slog-gin v1.21.1
 	github.com/shirou/gopsutil/v4 v4.26.5
+	github.com/vinovest/sqlx v1.7.2
 	golang.org/x/sync v0.21.0
 	gorm.io/driver/clickhouse v0.7.0
 	gorm.io/driver/mysql v1.5.7
@@ -85,6 +86,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/muir/sqltoken v0.1.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/paulmach/orb v0.13.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
