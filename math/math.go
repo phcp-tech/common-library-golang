@@ -12,30 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package clickhouse
+package math
 
 import (
-	"sync"
-
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"math/rand"
+	"time"
 )
 
-var (
-	instance driver.Conn
-	once     sync.Once
-)
-
-// InitDefault initializes the default singleton ClickHouse client.
-// If you want to use any other instance, please call NewClickHouse.
-func InitDefault(conf *Config) error {
-	var err error
-	once.Do(func() {
-		instance, err = NewClickHouse(conf)
-	})
-	return err
-}
-
-// Default returns the default singleton instance of the ClickHouse client.
-func Default() driver.Conn {
-	return instance
+// Random returns a pseudo-random integer in the half-open interval [min, max).
+// A new random source seeded with the current time is created on every call.
+func Random(min int, max int) int {
+	rand1 := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return rand1.Intn(max-min) + min
 }

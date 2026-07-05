@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metrics
+// Package datetime contains functions for calculating age based on timestamps.
+package datetime
 
 import (
 	"regexp"
