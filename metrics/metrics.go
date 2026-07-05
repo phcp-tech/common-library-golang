@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/phcp-tech/common-library-golang/cgroup"
+	"github.com/phcp-tech/common-library-golang/datetime"
+	"github.com/phcp-tech/common-library-golang/process"
 )
 
 // NameValue holds a name-value pair used in metrics and chart data formats.
@@ -34,7 +36,7 @@ var _startTime = time.Now().Unix()
 // NameValue pairs. The snapshot includes CPU and memory usage, thread and goroutine counts,
 // GOMAXPROCS, NumCPU, cgroup CPU/memory request and limit values, and the process uptime age.
 func GetMetrics() []NameValue {
-	pInfo := GetProcessInfo()
+	pInfo := process.GetProcessInfo()
 	cpuRequest, _ := cgroup.CPURequestMilli()
 	cpuLimit, _ := cgroup.CPULimitMilli()
 	memoryRequest, _ := cgroup.MemoryRequestBytes()
@@ -56,6 +58,6 @@ func GetMetrics() []NameValue {
 		{Name: "memoryRequest", Value: strconv.FormatInt(memoryRequest, 10)},
 		{Name: "memoryLimit", Value: strconv.FormatInt(memoryLimit, 10)},
 		// process age
-		{Name: "age", Value: GetAge(_startTime)},
+		{Name: "age", Value: datetime.GetAge(_startTime)},
 	}
 }
