@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/phcp-tech/common-library-golang/dbgorm/postgres"
+	"github.com/phcp-tech/common-library-golang/dto"
 )
 
 // ExampleNewPostgres shows how to open a PostgreSQL GORM database.
@@ -51,3 +52,14 @@ func ExampleInitDefault() {
 	fmt.Println(err != nil) // true — server unreachable
 }
 
+// ExampleChineseSortSql shows how to build an ORDER BY clause that
+// approximates pinyin ordering for a Chinese-text column, then append it
+// directly to a raw SELECT statement alongside dbgorm.PageSql for pagination.
+// This is PostgreSQL-specific — see ChineseSortSql's doc comment for why.
+func ExampleChineseSortSql() {
+	para := dto.PageParameter{Sort: "name", Direction: "ASC"}
+	query := "SELECT * FROM products" + postgres.ChineseSortSql(&para)
+	fmt.Println(query)
+	// Output:
+	// SELECT * FROM products ORDER BY convert_to(name,'GBK') ASC
+}
