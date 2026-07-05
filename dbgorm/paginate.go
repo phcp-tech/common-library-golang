@@ -27,9 +27,17 @@ import (
 const (
 	defaultPageLimit = 20
 	maxPageLimit     = 100
+	// maxPage bounds how deep OFFSET-based pagination can go. Page itself
+	// can't carry a SQL-injection payload (it's an int, not a string — see
+	// PageSql's doc comment), but an unbounded Page still lets a caller
+	// request an enormous OFFSET, which databases must still count past
+	// even though it returns no rows — a cheap way to force expensive scans.
+	maxPage = 100000
 )
 
 // Paginate returns a GORM scope that applies limit and offset pagination.
+// Caps limit at maxPageLimit and page at maxPage — see PageSql's doc comment
+// for why an unbounded page is a resource-usage guard, not a security fix.
 func Paginate(page, limit int) func(*gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
 		if limit == -1 {
@@ -37,6 +45,9 @@ func Paginate(page, limit int) func(*gorm.DB) *gorm.DB {
 		}
 		if page <= 0 {
 			page = 1
+		}
+		if page > maxPage {
+			page = maxPage
 		}
 		if limit <= 0 {
 			limit = defaultPageLimit
@@ -69,37 +80,48 @@ func OrderBy(allowed map[string]string, sort, direction string) func(*gorm.DB) *
 }
 
 // SortSql builds an ORDER BY SQL clause from the sort fields in para.
-// Defaults to ordering by "id ASC" when Sort or Direction are empty.
-// If para.Charset is set, the sort column is wrapped with convert_to for locale-aware ordering.
+// Defaults to ordering by "id ASC" when Sort is empty or unsafe.
+//
+// SortSql only ever produces a plain "ORDER BY <column> <direction>" clause —
+// it deliberately has no locale/charset-aware sorting, since that requires a
+// database-specific SQL function (e.g. PostgreSQL's convert_to, MySQL's
+// CONVERT(... USING ...)) that this dialect-agnostic root package cannot
+// pick correctly on its own. For approximate pinyin ordering of Chinese
+// text, see the dedicated ChineseSortSql in the relevant dialect package
+// (dbgorm/postgres, dbgorm/mysql) instead.
 func SortSql(para *dto.PageParameter) string {
 	// default sort by Id
-	if !isSafeSQLIdentifierPath(para.Sort) {
+	if !IsSafeSQLIdentifierPath(para.Sort) {
 		para.Sort = "id"
 	}
+	para.Direction = NormalizeSortDirection(para.Direction)
+	return " ORDER BY " + para.Sort + " " + para.Direction
+}
 
-	// default direction is ASC, not errors if illegal
-	para.Direction = strings.ToUpper(strings.TrimSpace(para.Direction))
-	if para.Direction == "" {
-		para.Direction = "ASC"
-	} else if para.Direction != "ASC" && para.Direction != "DESC" {
-		para.Direction = "ASC"
+// NormalizeSortDirection returns direction upper-cased and trimmed, falling
+// back to "ASC" when it is empty or not one of "ASC"/"DESC". Exported so
+// dialect packages building their own ORDER BY expressions (e.g.
+// ChineseSortSql in dbgorm/postgres, dbgorm/mysql) apply the exact same
+// direction rules SortSql does.
+func NormalizeSortDirection(direction string) string {
+	direction = strings.ToUpper(strings.TrimSpace(direction))
+	if direction != "ASC" && direction != "DESC" {
+		return "ASC"
 	}
-
-	// order by charset
-	var sqlstr string = ""
-	if para.Charset != "" && isSafeSQLName(para.Charset) {
-		// MySQL function is CONVERT
-		//sqlstr += " ORDER BY CONVERT(" + para.Sort + " USING " + para.Charset + ") " + para.Direction
-		sqlstr += " ORDER BY convert_to(" + para.Sort + ",'" + para.Charset + "') " + " " + para.Direction
-	} else {
-		sqlstr += " ORDER BY " + para.Sort + " " + para.Direction
-	}
-	return sqlstr
+	return direction
 }
 
 // PageSql builds a LIMIT/OFFSET SQL clause from the pagination fields in para.
 // When Limit is -1, all records are returned without a LIMIT clause.
-// Defaults to page 1 and the maxPageLimit when values are unset or invalid.
+// Defaults to page 1 and defaultPageLimit when values are unset or invalid;
+// caps Limit at maxPageLimit and Page at maxPage.
+//
+// Page and Limit are ints, not strings, so — unlike Sort — they carry no SQL
+// injection risk: strconv.Itoa on an int can only ever produce a plain
+// decimal digit string. The Page cap here is a resource-usage guard instead,
+// not a security fix: without it, an arbitrarily large Page still produces
+// a syntactically valid but enormous OFFSET that the database must count
+// past before returning zero rows.
 func PageSql(para *dto.PageParameter) string {
 	var sqlstr string = ""
 	if para.Limit == -1 {
@@ -108,6 +130,9 @@ func PageSql(para *dto.PageParameter) string {
 
 	if para.Page <= 0 {
 		para.Page = 1
+	}
+	if para.Page > maxPage {
+		para.Page = maxPage
 	}
 	if para.Limit <= 0 {
 		para.Limit = defaultPageLimit
@@ -123,19 +148,31 @@ func PageSql(para *dto.PageParameter) string {
 	return sqlstr
 }
 
-func isSafeSQLIdentifierPath(value string) bool {
+// IsSafeSQLIdentifierPath reports whether value is a dot-separated path of
+// safe SQL identifiers (e.g. "table.column"), guarding SortSql against
+// injection via the Sort field. Exported so dialect packages building their
+// own ORDER BY expressions (e.g. ChineseSortSql in dbgorm/postgres,
+// dbgorm/mysql) can validate a column name with the same rules.
+func IsSafeSQLIdentifierPath(value string) bool {
 	if value == "" {
 		return false
 	}
+	if !strings.Contains(value, ".") {
+		return IsSafeSQLName(value)
+	}
 	for _, part := range strings.Split(value, ".") {
-		if !isSafeSQLName(part) {
+		if !IsSafeSQLName(part) {
 			return false
 		}
 	}
 	return true
 }
 
-func isSafeSQLName(value string) bool {
+// IsSafeSQLName reports whether value is a safe single SQL identifier:
+// letters, digits (not leading), and underscores only. Also usable to
+// validate a charset/encoding name interpolated directly into SQL (e.g. by
+// ChineseSortSql), since it follows the same safe-token shape.
+func IsSafeSQLName(value string) bool {
 	if value == "" {
 		return false
 	}

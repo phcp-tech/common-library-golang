@@ -58,6 +58,15 @@ func TestPaginate_CapsAtMaxLimit(t *testing.T) {
 	// limit=200 > 100 → capped; no panic
 }
 
+func TestPaginate_CapsAtMaxPage(t *testing.T) {
+	db := openLocalDB(t)
+	db.AutoMigrate(&mockItem{}) //nolint:errcheck
+
+	var results []mockItem
+	db.Scopes(dbgorm.Paginate(999999999, 20)).Find(&results)
+	// page=999999999 → capped at maxPage; no panic, no enormous OFFSET computed
+}
+
 func TestPaginate_DefaultPageWhenZero(t *testing.T) {
 	db := openLocalDB(t)
 	db.AutoMigrate(&mockItem{}) //nolint:errcheck
@@ -107,8 +116,8 @@ func TestOrderBy_OtherDirection(t *testing.T) {
 
 // -----------------------------------------------------------------------
 // SortSql
-// isSafeSQLName and isSafeSQLIdentifierPath are private helpers called by
-// SortSql; their branches are covered through the table-driven cases below.
+// IsSafeSQLName and IsSafeSQLIdentifierPath are helpers called by SortSql;
+// their branches are covered through the table-driven cases below.
 // -----------------------------------------------------------------------
 
 func TestSortSql(t *testing.T) {
@@ -141,13 +150,6 @@ func TestSortSql(t *testing.T) {
 			wantDirection: "ASC",
 		},
 		{
-			name:          "charset wraps sort column",
-			para:          dto.PageParameter{Sort: "name", Direction: "DESC", Charset: "UTF8"},
-			wantSQL:       " ORDER BY convert_to(name,'UTF8')  DESC",
-			wantSort:      "name",
-			wantDirection: "DESC",
-		},
-		{
 			name:          "unsafe sort falls back to id",
 			para:          dto.PageParameter{Sort: "name; DROP TABLE users", Direction: "ASC"},
 			wantSQL:       " ORDER BY id ASC",
@@ -155,10 +157,10 @@ func TestSortSql(t *testing.T) {
 			wantDirection: "ASC",
 		},
 		{
-			name:          "unsafe charset is ignored",
-			para:          dto.PageParameter{Sort: "name", Direction: "ASC", Charset: "UTF8'); DROP TABLE users; --"},
-			wantSQL:       " ORDER BY name ASC",
-			wantSort:      "name",
+			name:          "dotted path is safe",
+			para:          dto.PageParameter{Sort: "users.name", Direction: "ASC"},
+			wantSQL:       " ORDER BY users.name ASC",
+			wantSort:      "users.name",
 			wantDirection: "ASC",
 		},
 	}
@@ -218,6 +220,13 @@ func TestPageSql(t *testing.T) {
 			wantSQL:   " LIMIT 100 OFFSET 100",
 			wantPage:  2,
 			wantLimit: 100,
+		},
+		{
+			name:      "caps page at max",
+			para:      dto.PageParameter{Page: 999999999, Limit: 20},
+			wantSQL:   " LIMIT 20 OFFSET 1999980",
+			wantPage:  100000,
+			wantLimit: 20,
 		},
 	}
 

@@ -20,6 +20,7 @@ import (
 
 	dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
 	"github.com/phcp-tech/common-library-golang/dbgorm/mysql"
+	"github.com/phcp-tech/common-library-golang/dto"
 )
 
 // ExampleNewMySQL shows how to open a MySQL GORM database with default pool settings.
@@ -54,3 +55,14 @@ func ExampleInitDefault() {
 	fmt.Println(dbgorm.Default() != nil)
 }
 
+// ExampleChineseSortSql shows how to build an ORDER BY clause that
+// approximates pinyin ordering for a Chinese-text column, then append it
+// directly to a raw SELECT statement alongside dbgorm.PageSql for pagination.
+// This is MySQL-specific — see ChineseSortSql's doc comment for why.
+func ExampleChineseSortSql() {
+	para := dto.PageParameter{Sort: "name", Direction: "ASC"}
+	query := "SELECT * FROM products" + mysql.ChineseSortSql(&para)
+	fmt.Println(query)
+	// Output:
+	// SELECT * FROM products ORDER BY CONVERT(name USING gbk) ASC
+}
