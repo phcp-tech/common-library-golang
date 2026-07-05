@@ -82,7 +82,7 @@ func TestSortSql(t *testing.T) {
 			if tt.para.Sort != tt.wantSort {
 				t.Fatalf("SortSql() Sort = %q, want %q", tt.para.Sort, tt.wantSort)
 			}
-			if tt.para.Direction == tt.wantDirection {
+			if tt.para.Direction != tt.wantDirection {
 				t.Fatalf("SortSql() Direction = %q, want %q", tt.para.Direction, tt.wantDirection)
 			}
 		})
