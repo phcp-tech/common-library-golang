@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 // ---------------------------------------------------------------------------
 
 func TestCreateToken_NonEmpty(t *testing.T) {
-	tok, err := CreateToken(1, "alice", 100, []string{"admin"}, 60*time.Minute)
+	tok, err := CreateToken(1, "alice", 5, 100, []string{"admin"}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken error: %v", err)
 	}
@@ -51,11 +51,11 @@ func TestCreateToken_NonEmpty(t *testing.T) {
 }
 
 func TestCreateToken_DifferentUsersProduceDifferentTokens(t *testing.T) {
-	tok1, err := CreateToken(1, "alice", 10, []string{"admin"}, 60*time.Minute)
+	tok1, err := CreateToken(1, "alice", 5, 10, []string{"admin"}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken user1 error: %v", err)
 	}
-	tok2, err := CreateToken(2, "bob", 20, []string{"user"}, 60*time.Minute)
+	tok2, err := CreateToken(2, "bob", 6, 20, []string{"user"}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken user2 error: %v", err)
 	}
@@ -73,6 +73,7 @@ func TestCreateParseToken_RoundTrip(t *testing.T) {
 		name      string
 		userId    uint64
 		username  string
+		orgId     uint64
 		productId uint64
 		roles     []string
 		expires   time.Duration
@@ -81,6 +82,7 @@ func TestCreateParseToken_RoundTrip(t *testing.T) {
 			name:      "single role",
 			userId:    42,
 			username:  "bob",
+			orgId:     900,
 			productId: 999,
 			roles:     []string{"viewer"},
 			expires:   60 * time.Minute,
@@ -89,14 +91,16 @@ func TestCreateParseToken_RoundTrip(t *testing.T) {
 			name:      "multiple roles",
 			userId:    7,
 			username:  "carol",
+			orgId:     201,
 			productId: 200,
 			roles:     []string{"admin", "editor", "viewer"},
 			expires:   30 * time.Minute,
 		},
 		{
-			name:      "zero product id",
+			name:      "zero org and product id",
 			userId:    1,
 			username:  "dave",
+			orgId:     0,
 			productId: 0,
 			roles:     []string{"user"},
 			expires:   120 * time.Minute,
@@ -105,6 +109,7 @@ func TestCreateParseToken_RoundTrip(t *testing.T) {
 			name:      "empty roles slice",
 			userId:    5,
 			username:  "eve",
+			orgId:     51,
 			productId: 50,
 			roles:     []string{},
 			expires:   10 * time.Minute,
@@ -114,7 +119,7 @@ func TestCreateParseToken_RoundTrip(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc // capture range variable
 		t.Run(tc.name, func(t *testing.T) {
-			tok, err := CreateToken(tc.userId, tc.username, tc.productId, tc.roles, tc.expires)
+			tok, err := CreateToken(tc.userId, tc.username, tc.orgId, tc.productId, tc.roles, tc.expires)
 			if err != nil {
 				t.Fatalf("CreateToken error: %v", err)
 			}
@@ -132,6 +137,9 @@ func TestCreateParseToken_RoundTrip(t *testing.T) {
 			}
 			if info.Username != tc.username {
 				t.Errorf("Username: got %q, want %q", info.Username, tc.username)
+			}
+			if info.OrgId != tc.orgId {
+				t.Errorf("OrgId: got %d, want %d", info.OrgId, tc.orgId)
 			}
 			if info.ProductId != tc.productId {
 				t.Errorf("ProductId: got %d, want %d", info.ProductId, tc.productId)
@@ -172,7 +180,7 @@ func TestParseToken_EmptyToken(t *testing.T) {
 }
 
 func TestParseToken_TamperedSignature(t *testing.T) {
-	tok, err := CreateToken(1, "user", 1, []string{"role"}, 60*time.Minute)
+	tok, err := CreateToken(1, "user", 1, 1, []string{"role"}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken error: %v", err)
 	}
@@ -198,7 +206,7 @@ func TestParseToken_TamperedSignature(t *testing.T) {
 func TestParseToken_RefreshTokenRejected(t *testing.T) {
 	// A refresh token is signed with a different secret key.
 	// ParseToken (which uses the access secret) must reject it.
-	refreshTok, err := CreateRefreshToken(1, "user", 1, 60*time.Minute)
+	refreshTok, err := CreateRefreshToken(1, "user", 1, 1, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateRefreshToken error: %v", err)
 	}
@@ -215,7 +223,7 @@ func TestParseToken_RefreshTokenRejected(t *testing.T) {
 func TestCreateToken_TokenTypeIsAccess(t *testing.T) {
 	// ParseToken internally validates that tokenType == "access".
 	// If it succeeds without error, the type assertion passed.
-	tok, err := CreateToken(1, "user", 1, []string{}, 60*time.Minute)
+	tok, err := CreateToken(1, "user", 1, 1, []string{}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken error: %v", err)
 	}
@@ -234,6 +242,7 @@ func TestCreateParseRefreshToken_RoundTrip(t *testing.T) {
 		name      string
 		userId    uint64
 		username  string
+		orgId     uint64
 		productId uint64
 		expires   time.Duration
 	}{
@@ -241,6 +250,7 @@ func TestCreateParseRefreshToken_RoundTrip(t *testing.T) {
 			name:      "standard user",
 			userId:    10,
 			username:  "frank",
+			orgId:     301,
 			productId: 300,
 			expires:   1440 * time.Minute, // 24 hours in minutes
 		},
@@ -248,6 +258,7 @@ func TestCreateParseRefreshToken_RoundTrip(t *testing.T) {
 			name:      "zero user id",
 			userId:    0,
 			username:  "ghost",
+			orgId:     2,
 			productId: 1,
 			expires:   60 * time.Minute,
 		},
@@ -256,7 +267,7 @@ func TestCreateParseRefreshToken_RoundTrip(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc // capture range variable
 		t.Run(tc.name, func(t *testing.T) {
-			tok, err := CreateRefreshToken(tc.userId, tc.username, tc.productId, tc.expires)
+			tok, err := CreateRefreshToken(tc.userId, tc.username, tc.orgId, tc.productId, tc.expires)
 			if err != nil {
 				t.Fatalf("CreateRefreshToken error: %v", err)
 			}
@@ -274,6 +285,9 @@ func TestCreateParseRefreshToken_RoundTrip(t *testing.T) {
 			}
 			if info.Username != tc.username {
 				t.Errorf("Username: got %q, want %q", info.Username, tc.username)
+			}
+			if info.OrgId != tc.orgId {
+				t.Errorf("OrgId: got %d, want %d", info.OrgId, tc.orgId)
 			}
 			if info.ProductId != tc.productId {
 				t.Errorf("ProductId: got %d, want %d", info.ProductId, tc.productId)
@@ -296,7 +310,7 @@ func TestParseRefreshToken_InvalidToken(t *testing.T) {
 func TestParseRefreshToken_AccessTokenRejected(t *testing.T) {
 	// An access token is signed with a different secret.
 	// ParseRefreshToken must reject it.
-	accessTok, err := CreateToken(1, "user", 1, []string{"role"}, 60*time.Minute)
+	accessTok, err := CreateToken(1, "user", 1, 1, []string{"role"}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken error: %v", err)
 	}
@@ -307,7 +321,7 @@ func TestParseRefreshToken_AccessTokenRejected(t *testing.T) {
 }
 
 func TestCreateRefreshToken_NonEmpty(t *testing.T) {
-	tok, err := CreateRefreshToken(99, "henry", 500, 120*time.Minute)
+	tok, err := CreateRefreshToken(99, "henry", 55, 500, 120*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateRefreshToken error: %v", err)
 	}
@@ -379,7 +393,7 @@ func newAuthRouter() *gin.Engine {
 }
 
 func TestAuthenticate_ValidToken_ReturnsOK(t *testing.T) {
-	tok, err := CreateToken(1, "alice", 10, []string{"admin"}, 60*time.Minute)
+	tok, err := CreateToken(1, "alice", 5, 10, []string{"admin"}, 60*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}

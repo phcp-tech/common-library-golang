@@ -1494,14 +1494,14 @@ token.InitToken(
 )
 
 // Create a short-lived access token (valid for 1 hour).
-tok, err := token.CreateToken(userId, username, productId, roles, time.Hour)
+tok, err := token.CreateToken(userId, username, orgId, productId, roles, time.Hour)
 
 // Validate and parse an access token from an incoming request.
 user, err := token.ParseToken(tok)
-fmt.Println(user.Username, user.UserId, user.Roles)
+fmt.Println(user.Username, user.UserId, user.OrgId, user.ProductId, user.Roles)
 
 // Create a long-lived refresh token (no roles embedded).
-refresh, err := token.CreateRefreshToken(userId, username, productId, 24*time.Hour)
+refresh, err := token.CreateRefreshToken(userId, username, orgId, productId, 24*time.Hour)
 
 // Register as a Gin middleware; stores LoginUser in context under key "userInfo".
 r := gin.New()
