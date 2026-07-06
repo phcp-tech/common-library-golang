@@ -20,10 +20,10 @@ package dto
 type LoginUser struct {
 	Token     string   `json:"token,omitempty"`     // stored token used for inter-service REST calls; not included when generating a new token
 	TokenType string   `json:"tokenType,omitempty"` // token purpose: "access" or "refresh"
-	UserId    uint64   `json:"userId"`
-	Username  string   `json:"username"`
 	OrgId     uint64   `json:"orgId"`
 	ProductId uint64   `json:"productId"`
+	UserId    uint64   `json:"userId"`
+	Username  string   `json:"username"`
 	Roles     []string `json:"roles"`
 }
 
@@ -44,7 +44,7 @@ type DataListResp struct {
 }
 
 type ResourceResp struct {
-	Id     int    `json:"id"`
+	Id     int64  `json:"id"`
 	Name   string `json:"name,omitempty"`
 	Status int    `json:"status,omitempty"`
 }

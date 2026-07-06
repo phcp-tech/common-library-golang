@@ -40,7 +40,7 @@ func ExampleInitToken() {
 // ExampleCreateToken shows how to generate a signed HS256 access token for a user.
 // The returned string is a standard Bearer token for use in the Authorization header.
 func ExampleCreateToken() {
-	tok, err := token.CreateToken(42, "alice", 100, []string{"admin", "editor"}, time.Hour)
+	tok, err := token.CreateToken(42, "alice", 7, 100, []string{"admin", "editor"}, time.Hour)
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -54,7 +54,7 @@ func ExampleCreateToken() {
 // ParseToken validates the signature, issuer, and token type, then returns
 // the embedded LoginUser.
 func ExampleParseToken() {
-	tok, err := token.CreateToken(42, "alice", 100, []string{"admin", "editor"}, time.Hour)
+	tok, err := token.CreateToken(42, "alice", 7, 100, []string{"admin", "editor"}, time.Hour)
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -66,16 +66,18 @@ func ExampleParseToken() {
 	}
 	fmt.Println(user.Username)
 	fmt.Println(user.UserId)
+	fmt.Println(user.OrgId)
 	// Output:
 	// alice
 	// 42
+	// 7
 }
 
 // ExampleCreateRefreshToken shows how to generate a long-lived refresh token.
 // Refresh tokens are signed with a separate secret (jwt.refresh.secretcode)
 // and do not carry role information.
 func ExampleCreateRefreshToken() {
-	tok, err := token.CreateRefreshToken(42, "alice", 100, 24*time.Hour)
+	tok, err := token.CreateRefreshToken(42, "alice", 7, 100, 24*time.Hour)
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -88,7 +90,7 @@ func ExampleCreateRefreshToken() {
 // ExampleParseRefreshToken shows the refresh-token round-trip.
 // Note that Roles is always empty in a refresh token.
 func ExampleParseRefreshToken() {
-	tok, err := token.CreateRefreshToken(42, "alice", 100, 24*time.Hour)
+	tok, err := token.CreateRefreshToken(42, "alice", 7, 100, 24*time.Hour)
 	if err != nil {
 		fmt.Println("error:", err)
 		return
@@ -99,9 +101,11 @@ func ExampleParseRefreshToken() {
 		return
 	}
 	fmt.Println(user.Username)
+	fmt.Println(user.OrgId)
 	fmt.Println(len(user.Roles) == 0) // refresh tokens carry no roles
 	// Output:
 	// alice
+	// 7
 	// true
 }
 
@@ -114,7 +118,7 @@ func ExampleAuthenticate() {
 	r.GET("/protected", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	// Valid token — 200 OK.
-	tok, _ := token.CreateToken(1, "alice", 10, []string{"admin"}, time.Hour)
+	tok, _ := token.CreateToken(1, "alice", 5, 10, []string{"admin"}, time.Hour)
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)

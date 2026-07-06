@@ -63,12 +63,13 @@ type UserClaims struct {
 
 // CreateToken generates a signed HS256 JWT access token for the given user, valid for the
 // specified duration.
-func CreateToken(userId uint64, username string, productId uint64, roles []string, expires time.Duration) (string, error) {
+func CreateToken(userId uint64, username string, orgId uint64, productId uint64, roles []string, expires time.Duration) (string, error) {
 	claims := UserClaims{
 		dto.LoginUser{
+			OrgId:     orgId,
+			ProductId: productId,
 			UserId:    userId,
 			Username:  username,
-			ProductId: productId,
 			Roles:     roles,
 			TokenType: accessToken,
 		},
@@ -105,21 +106,23 @@ func ParseToken(tokenString string) (userInfo dto.LoginUser, err error) {
 	}
 
 	userInfo.Token = tokenString
+	userInfo.OrgId = claims.OrgId
+	userInfo.ProductId = claims.ProductId
 	userInfo.UserId = claims.UserId
 	userInfo.Username = claims.Username
-	userInfo.ProductId = claims.ProductId
 	userInfo.Roles = claims.Roles
 	return userInfo, nil
 }
 
 // CreateRefreshToken creates a long-lived refresh token signed with a different
 // secret (jwt.refresh.secretcode). The expires parameter controls the token lifetime in minutes.
-func CreateRefreshToken(userId uint64, username string, productId uint64, expires time.Duration) (string, error) {
+func CreateRefreshToken(userId uint64, username string, orgId uint64, productId uint64, expires time.Duration) (string, error) {
 	claims := UserClaims{
 		dto.LoginUser{
+			OrgId:     orgId,
+			ProductId: productId,
 			UserId:    userId,
 			Username:  username,
-			ProductId: productId,
 			Roles:     nil, // Refresh token doesn't need roles, it's only used to get a new access token with the same user info.
 			TokenType: refreshToken,
 		},
@@ -157,9 +160,10 @@ func ParseRefreshToken(tokenString string) (dto.LoginUser, error) {
 	}
 
 	userInfo := dto.LoginUser{
+		OrgId:     claims.OrgId,
+		ProductId: claims.ProductId,
 		UserId:    claims.UserId,
 		Username:  claims.Username,
-		ProductId: claims.ProductId,
 		Roles:     claims.Roles,
 	}
 	return userInfo, nil
