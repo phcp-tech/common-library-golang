@@ -45,8 +45,10 @@ type DataListResp struct {
 
 type ResourceResp struct {
 	Id     int64  `json:"id"`
+	Oid    int64  `json:"oid"`
 	Name   string `json:"name,omitempty"`
 	Status int    `json:"status,omitempty"`
+	//Status string `json:"status,omitempty"`
 }
 
 // PageParameter holds pagination and sorting parameters for list queries.
