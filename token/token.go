@@ -63,7 +63,7 @@ type UserClaims struct {
 
 // CreateToken generates a signed HS256 JWT access token for the given user, valid for the
 // specified duration.
-func CreateToken(userId uint64, username string, orgId uint64, productId uint64, roles []string, expires time.Duration) (string, error) {
+func CreateToken(userId int64, username string, orgId int64, productId int64, roles []string, expires time.Duration) (string, error) {
 	claims := UserClaims{
 		dto.LoginUser{
 			OrgId:     orgId,
@@ -116,7 +116,7 @@ func ParseToken(tokenString string) (userInfo dto.LoginUser, err error) {
 
 // CreateRefreshToken creates a long-lived refresh token signed with a different
 // secret (jwt.refresh.secretcode). The expires parameter controls the token lifetime in minutes.
-func CreateRefreshToken(userId uint64, username string, orgId uint64, productId uint64, expires time.Duration) (string, error) {
+func CreateRefreshToken(userId int64, username string, orgId int64, productId int64, expires time.Duration) (string, error) {
 	claims := UserClaims{
 		dto.LoginUser{
 			OrgId:     orgId,

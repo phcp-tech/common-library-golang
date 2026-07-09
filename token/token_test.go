@@ -71,10 +71,10 @@ func TestCreateToken_DifferentUsersProduceDifferentTokens(t *testing.T) {
 func TestCreateParseToken_RoundTrip(t *testing.T) {
 	cases := []struct {
 		name      string
-		userId    uint64
+		userId    int64
 		username  string
-		orgId     uint64
-		productId uint64
+		orgId     int64
+		productId int64
 		roles     []string
 		expires   time.Duration
 	}{
@@ -240,10 +240,10 @@ func TestCreateToken_TokenTypeIsAccess(t *testing.T) {
 func TestCreateParseRefreshToken_RoundTrip(t *testing.T) {
 	cases := []struct {
 		name      string
-		userId    uint64
+		userId    int64
 		username  string
-		orgId     uint64
-		productId uint64
+		orgId     int64
+		productId int64
 		expires   time.Duration
 	}{
 		{

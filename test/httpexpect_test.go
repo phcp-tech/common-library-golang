@@ -22,30 +22,11 @@ import (
 	libtest "github.com/phcp-tech/common-library-golang/test"
 )
 
-// ExampleNewHttpExpect demonstrates how to use NewHttpExpect to test an HTTP
-// handler without starting a real server. Copy this pattern into your own
-// _test.go files, passing your test's own *testing.T instead of the
-// placeholder used below.
-//
-// GET — assert status and a JSON field:
-//
-//	e.GET("/ping").Expect().
-//	    Status(http.StatusOK).
-//	    JSON().Object().Value("message").String().IsEqual("pong")
-//
-// POST — send a JSON body and inspect the response:
-//
-//	e.POST("/echo").
-//	    WithJSON(map[string]any{"name": "world"}).
-//	    Expect().
-//	    Status(http.StatusOK).
-//	    JSON().Object().Value("data").Object().Value("name").String().IsEqual("world")
-//
-// This example has no "Output:" comment, so godoc/pkg.go.dev compile it but
-// never execute it — which is why a zero-value *testing.T is enough to stand
-// in below; a real test exercising this exact flow lives in
-// TestNewHttpExpect (httpexpect_test.go).
-func ExampleNewHttpExpect() {
+// TestNewHttpExpect is the regression test backing ExampleNewHttpExpect (see
+// example_test.go): it drives the same GET/POST/error-path requests but with
+// a real *testing.T, so a broken NewHttpExpect wiring actually fails the
+// build instead of only being caught downstream by consumer repos.
+func TestNewHttpExpect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
@@ -67,7 +48,7 @@ func ExampleNewHttpExpect() {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 	})
 
-	e := libtest.NewHttpExpect(new(testing.T), router)
+	e := libtest.NewHttpExpect(t, router)
 
 	// GET — check status code and a JSON string field.
 	e.GET("/ping").
