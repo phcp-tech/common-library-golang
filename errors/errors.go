@@ -38,4 +38,11 @@ var (
 	ErrorInternalServer = &dto.ResponseMessage{Code: 500, Message: "internal server error", Data: nil}
 	// ErrorDatabase is returned when a database operation fails.
 	ErrorDatabase = &dto.ResponseMessage{Code: 500, Message: "database error", Data: nil}
+	// ErrorVersionConflict is returned when an update carries a stale version:
+	// another user has saved a change to the same field since this caller last
+	// read it. Defined here because infra/dao must be able to
+	// return it too, and infra/dao cannot import service. Callers compare via
+	// err.Error() == ErrorVersionConflict.Message, matching the existing
+	// errorcode.ErrorNotFound.Message convention used across adapter/infra/dao.
+	ErrorVersionConflict = &dto.ResponseMessage{Code: 409, Message: "content has been modified by another user", Data: nil}
 )
