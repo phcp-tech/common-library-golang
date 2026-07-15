@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package errorcode
+package errors
 
 import "github.com/phcp-tech/common-library-golang/dto"
 
