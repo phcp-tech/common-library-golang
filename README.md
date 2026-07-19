@@ -65,6 +65,7 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`env/component`](#bootstrap-component-packages) | `.../common-library-golang/env/component` | `IComponent` adapter for the `env` package |
 | Bootstrap | [`log/component`](#bootstrap-component-packages) | `.../common-library-golang/log/component` | `IComponent` adapter for the `log` package |
 | Bootstrap | [`auth/component`](#bootstrap-component-packages) | `.../common-library-golang/auth/component` | `IComponent` adapter for the `auth` (casbin) package |
+| Bootstrap | [`token/component`](#bootstrap-component-packages) | `.../common-library-golang/token/component` | `IComponent` adapter for the `token` (JWT) package; fails Init if jwt.issuer or jwt.access.secretcode is unset/placeholder, or if jwt.refresh.secretcode is explicitly declared but left at its placeholder |
 | Bootstrap | [`gin/component`](#bootstrap-component-packages) | `.../common-library-golang/gin/component` | `IComponent` adapter for the `gin` engine |
 | Bootstrap | [`redis/component`](#bootstrap-component-packages) | `.../common-library-golang/redis/component` | `IComponent` adapter for the `redis` package |
 | Bootstrap | [`dbgorm/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/clickhouse/component` | `IComponent` adapter for the GORM ClickHouse connection (pings on Init) |
@@ -637,6 +638,7 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `env/component` | _(none — reads the config file itself)_ |
 | `log/component` | `log.level`, `log.file.path`, `log.file.max.size.mb`, `log.file.max.backups`, `log.file.max.age.days`, `log.file.compress` |
 | `auth/component` | _(model and policy passed as constructor arguments)_ |
+| `token/component` | `jwt.issuer` (required — must be identical across every service; Init fails if empty or `"TOBE_REPLACED"`), `jwt.access.secretcode` (required — Init fails if empty or `"TOBE_REPLACED"`), `jwt.refresh.secretcode` (optional if unset; Init fails if explicitly left at `"TOBE_REPLACED"`) |
 | `gin/component` | `app.env.value`, `cors.allow.origins.prod`, `cors.allow.origins.dev` |
 | `redis/component` | `redis.clusters`, `redis.database`, `redis.password` |
 | `dbgorm/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
@@ -1482,6 +1484,10 @@ Built on [golang-jwt/jwt](https://github.com/golang-jwt/jwt).
 
 **`InitToken` must be called once at application startup** before any token function.
 The secrets and issuer are typically read from `env.Env()` after `env.InitEnv()`.
+Prefer wiring this in via [`token/component`](#bootstrap-component-packages) in a
+`bootstrap` chain — its `Init()` fails fast if `jwt.access.secretcode` is empty or
+left at a placeholder value, instead of silently signing/validating every token
+with a non-secret string.
 
 ```go
 import "github.com/phcp-tech/common-library-golang/token"
@@ -1510,6 +1516,17 @@ r.Use(token.Authenticate())
 
 `Authenticate` aborts with HTTP 401 if the `Authorization: Bearer <token>` header is
 missing, malformed, or carries an invalid/expired token.
+
+`CreateToken`/`ParseToken`/`CreateRefreshToken`/`ParseRefreshToken` all reject an
+uninitialised or placeholder secret — `InitToken` never being called (accessSecret/
+refreshSecret left at their zero value `""`), or being called with `token.PlaceholderSecret`
+(`"TOBE_REPLACED"`, the scaffolding value shipped in this workspace's `config/app.toml`
+files) — with an error, rather than silently signing/validating every token with a
+well-known, non-secret string (HMAC accepts any key, including an empty or constant
+one, so this doesn't fail on its own). `token.IsUsableSecret` is the exported check
+behind this — `token/component` calls the same function to validate config at
+bootstrap `Init()` time, so the two layers of defense never disagree on what counts
+as "configured".
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/token#pkg-examples).
 

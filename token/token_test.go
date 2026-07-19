@@ -443,3 +443,110 @@ func TestAuthenticate_InvalidToken_Returns401(t *testing.T) {
 		t.Errorf("expected 401, got %d", w.Code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// IsUsableSecret — the single source of truth for "is this a real secret",
+// shared by CreateToken/ParseToken/CreateRefreshToken/ParseRefreshToken below
+// and by token/component's own config validation (token.IsUsableSecret).
+// ---------------------------------------------------------------------------
+
+func TestIsUsableSecret(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"empty", "", false},
+		{"placeholder", PlaceholderSecret, false},
+		{"real secret", "a-real-random-secret", true},
+	}
+	for _, c := range cases {
+		if got := IsUsableSecret(c.in); got != c.want {
+			t.Errorf("IsUsableSecret(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Uninitialised secrets — CreateToken/ParseToken/CreateRefreshToken/
+// ParseRefreshToken must refuse to run against an empty accessSecret/
+// refreshSecret rather than silently signing/validating with an empty HMAC
+// key (which succeeds cryptographically and would otherwise mask a missing
+// InitToken call, e.g. a caller that never wired up token/component).
+// ---------------------------------------------------------------------------
+
+func TestCreateToken_EmptyAccessSecret_ReturnsError(t *testing.T) {
+	savedAccess := accessSecret
+	accessSecret = ""
+	defer func() { accessSecret = savedAccess }()
+
+	if _, err := CreateToken(1, "alice", 5, 100, []string{"admin"}, time.Hour); err != errAccessSecretNotInitialized {
+		t.Errorf("CreateToken() error = %v, want %v", err, errAccessSecretNotInitialized)
+	}
+}
+
+func TestParseToken_EmptyAccessSecret_ReturnsError(t *testing.T) {
+	tok, err := CreateToken(1, "alice", 5, 100, []string{"admin"}, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateToken() unexpected error: %v", err)
+	}
+
+	savedAccess := accessSecret
+	accessSecret = ""
+	defer func() { accessSecret = savedAccess }()
+
+	if _, err := ParseToken(tok); err != errAccessSecretNotInitialized {
+		t.Errorf("ParseToken() error = %v, want %v", err, errAccessSecretNotInitialized)
+	}
+}
+
+func TestCreateRefreshToken_EmptyRefreshSecret_ReturnsError(t *testing.T) {
+	savedRefresh := refreshSecret
+	refreshSecret = ""
+	defer func() { refreshSecret = savedRefresh }()
+
+	if _, err := CreateRefreshToken(1, "alice", 5, 100, time.Hour); err != errRefreshSecretNotInitialized {
+		t.Errorf("CreateRefreshToken() error = %v, want %v", err, errRefreshSecretNotInitialized)
+	}
+}
+
+func TestParseRefreshToken_EmptyRefreshSecret_ReturnsError(t *testing.T) {
+	tok, err := CreateRefreshToken(1, "alice", 5, 100, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateRefreshToken() unexpected error: %v", err)
+	}
+
+	savedRefresh := refreshSecret
+	refreshSecret = ""
+	defer func() { refreshSecret = savedRefresh }()
+
+	if _, err := ParseRefreshToken(tok); err != errRefreshSecretNotInitialized {
+		t.Errorf("ParseRefreshToken() error = %v, want %v", err, errRefreshSecretNotInitialized)
+	}
+}
+
+// TestInitToken_PlaceholderSecrets_StillRejected reproduces calling InitToken
+// directly (bypassing token/component) with the workspace's scaffolding
+// placeholder value left un-replaced — the exact scenario a service reaches
+// if it never wires up token/component and never overrides jwt.access/
+// refresh.secretcode via env. All four functions must still refuse to run,
+// not just when the secret is empty.
+func TestInitToken_PlaceholderSecrets_StillRejected(t *testing.T) {
+	savedIssuer, savedAccess, savedRefresh := issuer, accessSecret, refreshSecret
+	defer func() { issuer, accessSecret, refreshSecret = savedIssuer, savedAccess, savedRefresh }()
+
+	InitToken("phcp", PlaceholderSecret, PlaceholderSecret)
+
+	if _, err := CreateToken(1, "alice", 5, 100, []string{"admin"}, time.Hour); err != errAccessSecretNotInitialized {
+		t.Errorf("CreateToken() error = %v, want %v", err, errAccessSecretNotInitialized)
+	}
+	if _, err := ParseToken("irrelevant"); err != errAccessSecretNotInitialized {
+		t.Errorf("ParseToken() error = %v, want %v", err, errAccessSecretNotInitialized)
+	}
+	if _, err := CreateRefreshToken(1, "alice", 5, 100, time.Hour); err != errRefreshSecretNotInitialized {
+		t.Errorf("CreateRefreshToken() error = %v, want %v", err, errRefreshSecretNotInitialized)
+	}
+	if _, err := ParseRefreshToken("irrelevant"); err != errRefreshSecretNotInitialized {
+		t.Errorf("ParseRefreshToken() error = %v, want %v", err, errRefreshSecretNotInitialized)
+	}
+}
