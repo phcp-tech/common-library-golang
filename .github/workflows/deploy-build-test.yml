@@ -26,7 +26,7 @@ jobs:
           pwd
           ls -alh 
 
-      # 3. 
+      # 3. Configure Git safe directory
       - name: Setup a safe directory for git 
         run : |
           git config --global --add safe.directory /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
@@ -42,18 +42,18 @@ jobs:
         run: |
           go mod download
 
-      # 6. Build binary
+      # 6. Run unit tests, use short mode to skip long-running tests, e.g. httpserver test and generate coverage report
+      - name: Run Unit Tests
+        run: |
+          GOEXPERIMENT=jsonv2 go test ./... -short -coverprofile=coverage.out -covermode=atomic -timeout 60s
+
+      # 7. Build binary
       - name: Build Binary
         run: |
           GOEXPERIMENT=jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
             go build ./...
 
-      # 7. Run unit tests
-      - name: Run Unit Tests
-        run: |
-          go test ./... -short -coverprofile=coverage.out -covermode=atomic -timeout 60s
-
-      # 8. show build result
+      # 8. Show build result
       - name: Show build result
         run: |
           echo "show directory after build:"

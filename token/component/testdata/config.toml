@@ -1,0 +1,10 @@
+[app]
+name = "test-app"
+
+[app.env]
+prefix = "TEST_"
+
+[jwt]
+issuer = "test-issuer"
+access.secretcode = "test-access-secret"
+refresh.secretcode = "test-refresh-secret"

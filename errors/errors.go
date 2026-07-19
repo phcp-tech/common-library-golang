@@ -44,5 +44,5 @@ var (
 	// return it too, and infra/dao cannot import service. Callers compare via
 	// err.Error() == ErrorVersionConflict.Message, matching the existing
 	// errorcode.ErrorNotFound.Message convention used across adapter/infra/dao.
-	ErrorVersionConflict = &dto.ResponseMessage{Code: 409, Message: "content has been modified by another user", Data: nil}
+	ErrorVersionConflict = &dto.ResponseMessage{Code: 409, Message: "content has been modified", Data: nil}
 )

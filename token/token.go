@@ -38,11 +38,41 @@ const (
 	refreshToken = "refresh"
 )
 
+// PlaceholderSecret is the scaffolding value shipped in this workspace's
+// config/app.toml files (e.g. jwt.access.secretcode = "TOBE_REPLACED"). A
+// secret still equal to this value is treated the same as an empty one —
+// it's a well-known, non-secret string, exactly as forgeable as no signature
+// at all. token/component checks against this same constant so the two
+// layers of defense (fail at bootstrap Init vs. fail on first call) never
+// drift out of sync on what counts as "not really configured".
+const PlaceholderSecret = "TOBE_REPLACED"
+
 var (
 	issuer        string
 	accessSecret  string
 	refreshSecret string
 )
+
+// errAccessSecretNotInitialized/errRefreshSecretNotInitialized guard against
+// calling the create/parse functions before InitToken has been called with a
+// real secret. Without this check, an empty or placeholder accessSecret/
+// refreshSecret still produces a valid HS256 signature (HMAC accepts any key,
+// including a well-known constant), so a call site that forgot to invoke
+// InitToken — or called it with the PlaceholderSecret scaffolding value —
+// fails silently instead of erroring.
+var (
+	errAccessSecretNotInitialized  = errors.New("token: access secret not initialized — call InitToken with a real jwt.access.secretcode before creating/parsing access tokens")
+	errRefreshSecretNotInitialized = errors.New("token: refresh secret not initialized — call InitToken with a real jwt.refresh.secretcode before creating/parsing refresh tokens")
+)
+
+// IsUsableSecret reports whether s is a real secret value — neither empty
+// nor left at the PlaceholderSecret scaffolding value. Exported so callers
+// like token/component can validate configuration against the exact same
+// rule this package enforces internally, instead of keeping a second,
+// separately-maintained copy of the check.
+func IsUsableSecret(s string) bool {
+	return s != "" && s != PlaceholderSecret
+}
 
 // InitToken stores the JWT signing secrets and issuer. It must be called once
 // at application startup before any token function.
@@ -64,6 +94,9 @@ type UserClaims struct {
 // CreateToken generates a signed HS256 JWT access token for the given user, valid for the
 // specified duration.
 func CreateToken(userId int64, username string, orgId int64, productId int64, roles []string, expires time.Duration) (string, error) {
+	if !IsUsableSecret(accessSecret) {
+		return "", errAccessSecretNotInitialized
+	}
 	claims := UserClaims{
 		dto.LoginUser{
 			OrgId:     orgId,
@@ -85,6 +118,9 @@ func CreateToken(userId int64, username string, orgId int64, productId int64, ro
 // ParseToken parses and validates a JWT access token string, returning the embedded
 // LoginUser information on success or an error if the token is invalid or expired.
 func ParseToken(tokenString string) (userInfo dto.LoginUser, err error) {
+	if !IsUsableSecret(accessSecret) {
+		return userInfo, errAccessSecretNotInitialized
+	}
 	tokenClaims, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(accessSecret), nil
 	})
@@ -117,6 +153,9 @@ func ParseToken(tokenString string) (userInfo dto.LoginUser, err error) {
 // CreateRefreshToken creates a long-lived refresh token signed with a different
 // secret (jwt.refresh.secretcode). The expires parameter controls the token lifetime in minutes.
 func CreateRefreshToken(userId int64, username string, orgId int64, productId int64, expires time.Duration) (string, error) {
+	if !IsUsableSecret(refreshSecret) {
+		return "", errRefreshSecretNotInitialized
+	}
 	claims := UserClaims{
 		dto.LoginUser{
 			OrgId:     orgId,
@@ -139,6 +178,9 @@ func CreateRefreshToken(userId int64, username string, orgId int64, productId in
 // secret code. Returns the embedded user info on success, or an error if
 // the token is invalid or expired.
 func ParseRefreshToken(tokenString string) (dto.LoginUser, error) {
+	if !IsUsableSecret(refreshSecret) {
+		return dto.LoginUser{}, errRefreshSecretNotInitialized
+	}
 	tokenClaims, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(refreshSecret), nil
 	})
