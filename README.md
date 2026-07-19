@@ -5,6 +5,8 @@
 ![CI](https://github.com/phcp-tech/common-library-golang/actions/workflows/deploy-build-test.yml/badge.svg)
 [![codecov](https://codecov.io/gh/phcp-tech/common-library-golang/branch/main/graph/badge.svg)](https://app.codecov.io/gh/phcp-tech/common-library-golang)
 
+![common-library-golang](docs/common-library-golang-banner.png)
+
 Common-library-golang is a collection of functional components used within the PHCP ecosystem, providing numerous components for microservice development, it provides some out-of-the-box functions, such as environment, log, database, etc. To make it more widely available, it is now open-sourced under the Apache license.
 
 ## Requirements
