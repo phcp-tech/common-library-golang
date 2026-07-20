@@ -31,6 +31,19 @@ const (
 	// request an enormous OFFSET, which databases must still count past
 	// even though it returns no rows — a cheap way to force expensive scans.
 	maxPage = 100000
+
+	// NoLimit, passed as PageParameter.Limit, returns every matching row —
+	// PageSql produces no LIMIT/OFFSET clause at all. This is deliberately
+	// the only Limit value with that meaning: 0 (Go's own zero value for an
+	// unset field) and every other negative number are both treated as "not
+	// set" and replaced with defaultPageLimit instead of also being
+	// unlimited. Limit commonly flows straight from an HTTP query parameter
+	// (e.g. strconv.Atoi(c.Query("limit")), which parses "-2" without error),
+	// so widening this to "any negative value" would let an ordinary
+	// external request force an unbounded, unpaginated query just by
+	// supplying some negative number — a caller has to know and use this
+	// exact sentinel to opt into that, it can't be reached by accident.
+	NoLimit = -1
 )
 
 // SortSql builds an ORDER BY SQL clause from the sort fields in para.
@@ -65,9 +78,15 @@ func NormalizeSortDirection(direction string) string {
 }
 
 // PageSql builds a LIMIT/OFFSET SQL clause from the pagination fields in para.
-// When Limit is -1, all records are returned without a LIMIT clause.
-// Defaults to page 1 and defaultPageLimit when values are unset or invalid;
-// caps Limit at maxPageLimit and Page at maxPage.
+//
+// Limit has three distinct behaviors:
+//   - Limit == NoLimit (-1): return every matching row, no LIMIT clause at all.
+//   - Limit <= 0 and != NoLimit (i.e. 0, or any other negative value): treated
+//     as not set, replaced with defaultPageLimit. See NoLimit's doc comment
+//     for why this doesn't extend to negative values in general.
+//   - Limit > 0: used as-is, capped at maxPageLimit.
+//
+// Page defaults to 1 when unset or invalid (<= 0), capped at maxPage.
 //
 // Page and Limit are ints, not strings, so — unlike Sort — they carry no SQL
 // injection risk: strconv.Itoa on an int can only ever produce a plain
@@ -77,7 +96,7 @@ func NormalizeSortDirection(direction string) string {
 // past before returning zero rows.
 func PageSql(para *dto.PageParameter) string {
 	var sqlstr string = ""
-	if para.Limit == -1 {
+	if para.Limit == NoLimit {
 		return sqlstr
 	}
 

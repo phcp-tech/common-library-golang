@@ -219,6 +219,50 @@ func TestTransact_RollsBackOnPanic(t *testing.T) {
 	}
 }
 
+// TestTransact_BareTxAsOutermostArgPanics documents the exact footgun
+// described in Transact's doc comment: TransactContext (vinovest/sqlx)
+// decides whether it's already inside a transaction by checking a value
+// stashed in ctx — not by inspecting db's type — and only begins a new
+// transaction when db is concretely *sqlx.DB. Pass a *sqlx.Tx obtained
+// independently (e.g. via db.Beginx(), as here) together with a ctx that was
+// never produced by an outer Transact call, and both branches of that
+// internal check miss: the tx handed to fn is nil, and the deferred
+// Commit/Rollback at the end panics on that nil pointer.
+//
+// This test exists to freeze today's actual (dangerous) behavior as a
+// baseline. If Transact is ever rewritten to reject this case with a clear
+// error instead of panicking, this test is the one to flip from "expects a
+// panic" to "expects a descriptive error".
+func TestTransact_BareTxAsOutermostArgPanics(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	tx, err := db.Beginx()
+	if err != nil {
+		t.Fatalf("Beginx: %v", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // best-effort cleanup if the panic assertion below is ever wrong
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected Transact to panic when given a bare *sqlx.Tx as the outermost db argument, got no panic")
+		}
+		if msg, ok := r.(error); ok {
+			t.Logf("got expected panic: %v", msg)
+		} else {
+			t.Logf("got expected panic: %v", r)
+		}
+	}()
+
+	_ = dbsqlx.Transact(ctx, tx, func(ctx context.Context, inner sqlx.Queryable) error {
+		_, err := dbsqlx.Exec(ctx, inner, `INSERT INTO users (name) VALUES (?)`, "should-not-persist")
+		return err
+	})
+
+	t.Fatal("unreachable: Transact should have panicked before returning")
+}
+
 func TestTransact_NestedReusesOuterTransaction(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)

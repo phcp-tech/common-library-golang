@@ -56,7 +56,7 @@ type ResourceResp struct {
 // frontend can rely on their presence in the JSON payload.
 type PageParameter struct {
 	Page      int    `json:"page"`  // current page number (1-based); must not be omitted
-	Limit     int    `json:"limit"` // number of records per page; must not be omitted
+	Limit     int    `json:"limit"` // number of records per page; must not be omitted. dbsqlx.NoLimit (-1) requests every row with no LIMIT clause; see dbsqlx.PageSql
 	Sort      string `json:"sort,omitempty"`
 	Direction string `json:"direction,omitempty" validate:"omitempty,oneofci=ASC DESC"` // sort direction: ASC or DESC
 	Charset   string `json:"charset,omitempty"`
