@@ -276,3 +276,26 @@ func ExamplePageSql() {
 	// true
 	// 3
 }
+
+// ExamplePageSql_noLimit shows how to request every matching row with no
+// LIMIT/OFFSET clause at all, via dbsqlx.NoLimit. This is deliberately the
+// only Limit value with that meaning — 0 or any other negative Limit falls
+// back to the default page size instead; see NoLimit's doc comment for why.
+func ExamplePageSql_noLimit() {
+	ctx := context.Background()
+	db := exDB()
+	for i := range 5 {
+		db.MustExec(`INSERT INTO ex_products (name) VALUES (?)`, fmt.Sprintf("item-%d", i))
+	}
+
+	para := dto.PageParameter{Limit: dbsqlx.NoLimit}
+	query := "SELECT * FROM ex_products" + dbsqlx.PageSql(&para)
+
+	var products []exProduct
+	err := db.SelectContext(ctx, &products, query)
+	fmt.Println(err == nil)
+	fmt.Println(len(products)) // all 5 rows, no LIMIT applied
+	// Output:
+	// true
+	// 5
+}

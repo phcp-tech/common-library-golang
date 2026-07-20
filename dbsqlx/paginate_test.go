@@ -109,15 +109,28 @@ func TestPageSql(t *testing.T) {
 			wantLimit: 25,
 		},
 		{
-			name:      "limit minus one disables pagination",
-			para:      dto.PageParameter{Page: 2, Limit: -1},
+			name:      "NoLimit disables pagination",
+			para:      dto.PageParameter{Page: 2, Limit: dbsqlx.NoLimit},
 			wantSQL:   "",
 			wantPage:  2,
-			wantLimit: -1,
+			wantLimit: dbsqlx.NoLimit,
 		},
 		{
 			name:      "defaults invalid page and limit",
 			para:      dto.PageParameter{},
+			wantSQL:   " LIMIT 20 OFFSET 0",
+			wantPage:  1,
+			wantLimit: 20,
+		},
+		{
+			// Regression test for the NoLimit/negative-Limit distinction:
+			// only the exact NoLimit sentinel (-1) disables pagination — any
+			// other negative value (e.g. from a malformed "?limit=-2" query
+			// parameter, which strconv.Atoi parses without error) must NOT
+			// also be treated as "no limit"; it falls back to
+			// defaultPageLimit just like 0 does.
+			name:      "negative limit other than NoLimit falls back to default, not unlimited",
+			para:      dto.PageParameter{Page: 1, Limit: -2},
 			wantSQL:   " LIMIT 20 OFFSET 0",
 			wantPage:  1,
 			wantLimit: 20,

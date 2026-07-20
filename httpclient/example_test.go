@@ -59,6 +59,23 @@ func ExampleNewHttpClient_insecureSkipVerify() {
 	// true
 }
 
+// ExampleNewHttpClient_retryOnServerErrors shows how to make RetryMax also
+// retry HTTP 429/5xx responses, not just transport-level errors (connection
+// refused, timeout, etc). resty's own default retry condition only looks at
+// the error returned by the underlying round trip — a well-formed 500/503
+// response is not a Go error, so without this flag RetryMax never fires for
+// those. Defaults to false to avoid silently lengthening existing callers'
+// requests against a genuinely-down downstream.
+func ExampleNewHttpClient_retryOnServerErrors() {
+	cli := httpclient.NewHttpClient(httpclient.Config{
+		RetryMax:            3,
+		RetryOnServerErrors: true,
+	})
+	fmt.Println(cli != nil)
+	// Output:
+	// true
+}
+
 // ExampleHttpClient_Client shows how to obtain the underlying resty.Client
 // for advanced configuration not exposed by Config.
 func ExampleHttpClient_Client() {
