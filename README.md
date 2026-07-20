@@ -1595,17 +1595,25 @@ Feature-rich HTTP client built on [go-resty/resty](https://github.com/go-resty/r
 with pre-configured retry, JWT bearer-token support, and automatic JSON handling.
 Suitable for structured service-to-service calls.
 
+**`RetryMax` only retries transport-level failures by default** (connection
+refused, timeout, DNS failure, ...) — this is resty's own default retry
+condition, which looks solely at the `error` returned by the round trip. A
+well-formed HTTP 500/503/429 response is *not* a Go error, so `RetryMax`
+alone never retries those. Set `RetryOnServerErrors: true` to also retry on
+429 and 5xx responses.
+
 ```go
 import "github.com/phcp-tech/common-library-golang/httpclient"
 
-// Default settings: Timeout=10s, RetryMax=3.
+// Default settings: Timeout=10s, RetryMax=3 (transport-level failures only).
 cli := httpclient.NewHttpClient()
 
 // Custom settings — zero-value fields fall back to defaults.
 cli := httpclient.NewHttpClient(httpclient.Config{
-    Timeout:            15 * time.Second,
-    RetryMax:           5,
-    InsecureSkipVerify: true, // only for internal self-signed certs
+    Timeout:             15 * time.Second,
+    RetryMax:            5,
+    InsecureSkipVerify:  true, // only for internal self-signed certs
+    RetryOnServerErrors: true, // also retry on HTTP 429/5xx responses
 })
 
 resp, err := cli.Get(url, jwtToken, nil)
@@ -1627,6 +1635,10 @@ Wraps [hashicorp/go-retryablehttp](https://github.com/hashicorp/go-retryablehttp
 and exposes it as a standard `*http.Client` with configurable retry and timeout.
 Use this sub-package when existing code already uses `net/http` directly and you
 need to add retry behaviour without switching to resty.
+
+Unlike `httpclient` above, this package's default retry policy already retries
+on HTTP 429 and most 5xx responses in addition to transport-level failures —
+no equivalent of `RetryOnServerErrors` is needed here.
 
 **Import this sub-package only when needed** — it pulls in the hashicorp library
 independently of the parent `httpclient` package.
@@ -1653,7 +1665,8 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 A production-ready HTTP/HTTPS server built on `net/http` with secure defaults.
 It wraps `http.Server` directly (not `gin.Run()`) to provide:
 
-- **Configurable timeouts** — `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `ReadHeaderTimeout`
+- **Configurable timeouts** — `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `ReadHeaderTimeout`.
+  A zero `WriteTimeout` falls back to the 60s default, not "unlimited" — pass `httpserver.NoWriteTimeout` for that (e.g. large file downloads).
 - **TLS 1.2+ with strong cipher suites** — activated when `CrtFile` and `KeyFile` are set
 - **Graceful shutdown** — `Shutdown(ctx)` drains in-flight requests before stopping
 
@@ -1668,11 +1681,11 @@ runner := httpserver.NewHttpServer(httpserver.Config{Port: "8080"})
 
 // HTTPS with custom timeouts.
 runner := httpserver.NewHttpServer(httpserver.Config{
-    Port:        "8443",
-    CrtFile:     "/etc/ssl/server.crt",
-    KeyFile:     "/etc/ssl/server.key",
-    ReadTimeout: 15 * time.Second,
-    WriteTimeout: 0, // 0 = unlimited (required for file downloads)
+    Port:         "8443",
+    CrtFile:      "/etc/ssl/server.crt",
+    KeyFile:      "/etc/ssl/server.key",
+    ReadTimeout:  15 * time.Second,
+    WriteTimeout: httpserver.NoWriteTimeout, // unlimited (required for file downloads) — a literal 0 falls back to the 60s default instead
 })
 
 // Start in a goroutine; block until OS signal, then shut down gracefully.

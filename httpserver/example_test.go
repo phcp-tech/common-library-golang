@@ -87,12 +87,15 @@ func ExampleNewHttpServer_tls() {
 // ExampleNewHttpServer_customTimeouts shows how to override the default timeout values.
 // Zero-value duration fields fall back to the package defaults:
 // ReadTimeout=30s, WriteTimeout=60s, IdleTimeout=120s, ReadHeaderTimeout=10s.
-// Set WriteTimeout to 0 to allow unlimited response time (e.g. file downloads).
+// WriteTimeout is the one exception: its own zero value can't mean "unlimited"
+// here, since resolve() already uses zero to mean "not set, apply the
+// default" — pass NoWriteTimeout instead to allow unlimited response time
+// (e.g. file downloads).
 func ExampleNewHttpServer_customTimeouts() {
 	runner := httpserver.NewHttpServer(httpserver.Config{
 		Port:              "8080",
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      0, // unlimited — required for file downloads
+		WriteTimeout:      httpserver.NoWriteTimeout, // unlimited — required for file downloads
 		IdleTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 	})

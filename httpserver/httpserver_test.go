@@ -17,9 +17,11 @@ package httpserver_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,21 +105,8 @@ func TestHTTPRunner_PlainHTTP_StartAndShutdown(t *testing.T) {
 		errCh <- runner.Start(newTestHandler())
 	}()
 
-	// Poll until the server is reachable (up to 2 seconds).
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
-	var up bool
-	for range 40 {
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			up = true
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !up {
-		t.Fatal("server did not become reachable within 2 seconds")
-	}
+	waitUntilReachable(t, addr)
 
 	// Verify the server responds.
 	resp, err := http.Get(fmt.Sprintf("http://%s/ping", addr))
@@ -189,4 +178,115 @@ func TestHTTPRunner_ShutdownBeforeStart_IsNoOp(t *testing.T) {
 	if err := runner.Shutdown(ctx); err != nil {
 		t.Errorf("Shutdown before Start should return nil, got %v", err)
 	}
+}
+
+// -----------------------------------------------------------------------
+// Config.WriteTimeout / NoWriteTimeout — end-to-end through a real
+// http.Server, not just checking the resolved struct field. A handler
+// writes a first chunk, flushes, sleeps past the configured WriteTimeout,
+// then writes a second chunk — proving whether the server actually killed
+// the connection mid-response, not just whether resolve() stored the right
+// duration.
+// -----------------------------------------------------------------------
+
+// slowHandler returns a handler that flushes "first-chunk", sleeps for
+// delay, then writes "second-chunk". Whether the client ever receives the
+// second chunk is exactly what distinguishes a killed connection from an
+// unlimited one.
+func slowHandler(delay time.Duration) http.Handler {
+	r := gin.New()
+	r.GET("/slow", func(c *gin.Context) {
+		c.Writer.WriteHeader(http.StatusOK)
+		c.Writer.Write([]byte("first-chunk")) //nolint:errcheck
+		c.Writer.Flush()
+		time.Sleep(delay)
+		c.Writer.Write([]byte("second-chunk")) //nolint:errcheck
+	})
+	return r
+}
+
+func TestHTTPRunner_WriteTimeout_KillsSlowWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real HTTP server test in short mode (-short)")
+	}
+	port := freePort(t)
+	runner := httpserver.NewHttpServer(httpserver.Config{
+		Port:         port,
+		WriteTimeout: 100 * time.Millisecond, // shorter than slowHandler's 300ms delay
+	})
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- runner.Start(slowHandler(300 * time.Millisecond)) }()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		runner.Shutdown(ctx) //nolint:errcheck
+	}()
+
+	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	waitUntilReachable(t, addr)
+
+	resp, err := http.Get(fmt.Sprintf("http://%s/slow", addr))
+	if err != nil {
+		t.Fatalf("GET /slow: %v", err)
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+
+	// A WriteTimeout firing mid-response is observed client-side as a
+	// truncated body (the connection was cut before "second-chunk" was
+	// written), typically surfaced as a read error since the chunked
+	// encoding never gets its terminating chunk.
+	if readErr == nil && strings.Contains(string(body), "second-chunk") {
+		t.Fatalf("expected the connection to be killed before the second chunk, got full body %q with no error", body)
+	}
+}
+
+func TestHTTPRunner_NoWriteTimeout_AllowsSlowWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real HTTP server test in short mode (-short)")
+	}
+	port := freePort(t)
+	runner := httpserver.NewHttpServer(httpserver.Config{
+		Port:         port,
+		WriteTimeout: httpserver.NoWriteTimeout,
+	})
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- runner.Start(slowHandler(300 * time.Millisecond)) }()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		runner.Shutdown(ctx) //nolint:errcheck
+	}()
+
+	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	waitUntilReachable(t, addr)
+
+	resp, err := http.Get(fmt.Sprintf("http://%s/slow", addr))
+	if err != nil {
+		t.Fatalf("GET /slow: %v", err)
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		t.Fatalf("ReadAll: %v (want no error — NoWriteTimeout should let the slow write complete)", readErr)
+	}
+	if got := string(body); got != "first-chunksecond-chunk" {
+		t.Fatalf("body = %q, want %q (both chunks, uninterrupted)", got, "first-chunksecond-chunk")
+	}
+}
+
+// waitUntilReachable polls addr until a TCP connection succeeds, up to 2 seconds.
+func waitUntilReachable(t *testing.T, addr string) {
+	t.Helper()
+	for range 40 {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("server did not become reachable within 2 seconds")
 }
