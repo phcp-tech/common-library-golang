@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -51,6 +52,18 @@ func NewHttpClient(cfg ...Config) *HttpClient {
 		// MaxWaitTime Default is 30 seconds.
 		SetRetryMaxWaitTime(c.RetryMaxWaitTime).
 		SetLogger(&slogWrapper{Logger: slog.Default()})
+
+	// Without this, resty's default retry condition only fires on a
+	// transport-level error (err != nil) — a 429/5xx response is a
+	// successful round-trip as far as resty is concerned, so RetryCount
+	// alone never retries those. See the doc comment on RetryOnServerErrors.
+	if c.RetryOnServerErrors {
+		client.AddRetryCondition(func(r *resty.Response, err error) bool {
+			return err != nil ||
+				r.StatusCode() == http.StatusTooManyRequests ||
+				r.StatusCode() >= http.StatusInternalServerError
+		})
+	}
 
 	return &HttpClient{httpClient: client}
 }

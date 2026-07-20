@@ -34,6 +34,17 @@ type Config struct {
 	RetryWaitTime      time.Duration // default: 1s
 	RetryMaxWaitTime   time.Duration // default: 30s
 	InsecureSkipVerify bool          // skip TLS certificate verification; use only for internal services with self-signed certs
+
+	// RetryOnServerErrors also retries on HTTP 429 and 5xx responses, not just
+	// transport-level errors (connection refused, timeout, DNS failure, etc).
+	// resty's own default retry condition only looks at the error returned by
+	// the underlying http.Client.Do — a well-formed 500/503/429 response is
+	// not a Go error, so without this flag RetryMax never fires for those.
+	// Defaults to false: existing callers that only expect transport-level
+	// retries keep that behavior; turning this on can noticeably lengthen a
+	// call against a genuinely-down downstream (RetryMax attempts, each
+	// waiting up to RetryMaxWaitTime) instead of failing fast.
+	RetryOnServerErrors bool
 }
 
 // resolve returns a copy of cfg with zero-value fields replaced by defaults.
