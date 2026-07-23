@@ -43,7 +43,6 @@ func GetMetrics() []NameValue {
 	memoryLimit, _ := cgroup.MemoryLimitBytes()
 
 	return []NameValue{
-		{Name: "timestamp", Value: strconv.FormatInt(time.Now().UnixMilli(), 10)},
 		// cpu and memory
 		{Name: "cpuPercent", Value: strconv.Itoa(int(pInfo.CpuPercent))},
 		{Name: "memorySize", Value: strconv.Itoa(int(pInfo.MemorySize))},
