@@ -38,11 +38,6 @@ type neverStrategy[V any] struct{}
 
 func (s neverStrategy[V]) ShouldReplace(_, _ V) bool { return false }
 
-// newStringCmap creates a fresh concurrent map for the fallback-path tests.
-func newStringCmap() cmap.ConcurrentMap[string, string] {
-	return cmap.New[string]()
-}
-
 // ---------------------------------------------------------------------------
 // CMap tests  (IMap[string, int64])
 // ---------------------------------------------------------------------------
@@ -413,6 +408,21 @@ func TestCMapGen_Replace_WithDefaultCompare_Lesser(t *testing.T) {
 	}
 }
 
+// TestNewCMapGen_NoDefaultStrategy is a white-box regression guard for the fix
+// removing NewCMapGen's automatic NumericGreaterStrategy wiring: it asserts the
+// unexported fields directly, rather than only inferring the absence of a
+// default through Replace's resulting behaviour (see
+// TestCMapGen_Replace_Fallback_AlwaysOverwrites for that angle).
+func TestNewCMapGen_NoDefaultStrategy(t *testing.T) {
+	m := NewCMapGen[string, int64]()
+	if m.defaultStrategy != nil {
+		t.Fatal("expected defaultStrategy to be nil immediately after construction")
+	}
+	if m.defaultCompare != nil {
+		t.Fatal("expected defaultCompare to be nil immediately after construction")
+	}
+}
+
 func TestCMapGen_Replace_WithDefaultStrategy(t *testing.T) {
 	m := NewCMapGen[string, int64]()
 	ms := &mockAlwaysStrategy[int64]{}
@@ -431,24 +441,20 @@ func TestCMapGen_Replace_WithDefaultStrategy(t *testing.T) {
 	}
 }
 
-func TestCMapGen_Replace_Fallback_StringComparison(t *testing.T) {
-	// Create a CMapGen with no strategy and no compare set,
-	// and bypass NewCMapGen (which installs NumericGreaterStrategy).
-	m := &CMapGen[string, string]{
-		maps: newStringCmap(),
-	}
-	m.Set("k", "abc")
+func TestCMapGen_Replace_Fallback_AlwaysOverwrites(t *testing.T) {
+	// NewCMapGen sets no default strategy/compare until the caller opts in via
+	// SetDefaultStrategy/SetDefaultCompare, so Replace's fallback (neither
+	// configured) must behave like ReplaceAlways: unconditional overwrite,
+	// regardless of any ordering between the old and new value.
+	m := NewCMapGen[string, string]()
+	m.Set("k", "xyz")
 
-	if !m.Replace("k", "xyz") { // "xyz" > "abc"
-		t.Fatal("expected Replace true for 'xyz' > 'abc'")
+	if !m.Replace("k", "aaa") { // "aaa" < "xyz", but fallback always overwrites
+		t.Fatal("expected Replace true regardless of value ordering (fallback = ReplaceAlways)")
 	}
 	val, _ := m.Get("k")
-	if val != "xyz" {
-		t.Fatalf("expected 'xyz', got %q", val)
-	}
-
-	if m.Replace("k", "aaa") { // "aaa" < "xyz"
-		t.Fatal("expected Replace false for 'aaa' < 'xyz'")
+	if val != "aaa" {
+		t.Fatalf("expected 'aaa', got %q", val)
 	}
 }
 
@@ -658,6 +664,24 @@ func TestNumericGreaterStrategy(t *testing.T) {
 	}
 	if s.ShouldReplace(5, 5) {
 		t.Fatal("expected false: equal values")
+	}
+}
+
+// TestNumericGreaterStrategy_RealNumericComparison is a regression test for a
+// bug where ShouldReplace compared fmt.Sprint(oldValue)/fmt.Sprint(newValue) as
+// strings instead of comparing V's values directly. That gave wrong answers
+// whenever the two values' formatted lengths differed - e.g. "10" < "9"
+// lexicographically, even though 10 > 9 numerically.
+func TestNumericGreaterStrategy_RealNumericComparison(t *testing.T) {
+	s := NumericGreaterStrategy[int64]{}
+	if !s.ShouldReplace(9, 10) {
+		t.Fatal("expected true: 10 > 9 numerically (would be false under string comparison, since \"10\" < \"9\")")
+	}
+	if !s.ShouldReplace(99, 100) {
+		t.Fatal("expected true: 100 > 99 numerically")
+	}
+	if s.ShouldReplace(-1, -2) {
+		t.Fatal("expected false: -2 < -1 numerically")
 	}
 }
 

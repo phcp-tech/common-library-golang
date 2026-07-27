@@ -114,10 +114,20 @@ func ExampleCMapGen_ReplaceIfNotExists() {
 	// 7500
 }
 
-// ExampleCMapGen_UpsertWithCallback shows how to perform an atomic
-// read-modify-write using a callback. The callback receives whether the key
-// existed, the old value, and the candidate new value, and returns the value
-// to store.
+// ExampleCMapGen_UpsertWithCallback shows how to perform a read-modify-write
+// using a callback. The callback receives whether the key existed, the old
+// value, and the candidate new value, and returns the value to store.
+//
+// This is NOT atomic across concurrent callers of the same key: Get and Set
+// are two independent, separately-locked operations with the callback
+// running in between, so two goroutines racing on the same key can both read
+// the same old value and the last Set wins, regardless of which callback
+// result should logically have won. It is safe under concurrent writes to
+// different keys, and safe (no corruption/panic) even for the same key — it
+// just doesn't guarantee the logically-correct value is the one that ends up
+// stored. For a true atomic read-modify-write on a single key, use the
+// underlying cmap.ConcurrentMap.Upsert directly, which holds the shard lock
+// for the whole callback.
 func ExampleCMapGen_UpsertWithCallback() {
 	m := maps.NewCMapGen[string, int64]()
 	m.Set("CHFUSD", 1000)

@@ -95,6 +95,10 @@ func BenchmarkCMapGen_Get(b *testing.B) {
 
 func BenchmarkCMapGen_Replace_DefaultStrategy(b *testing.B) {
 	m := NewCMapGen[string, int64]()
+	// NewCMapGen no longer wires up a default strategy automatically (V is
+	// unconstrained, so it can't); opt in explicitly to benchmark the built-in
+	// greater-value strategy the way this benchmark's name implies.
+	m.SetDefaultStrategy(NumericGreaterStrategy[int64]{})
 	m.Set("key", 0)
 	b.ResetTimer()
 	for i := range b.N {
@@ -149,6 +153,7 @@ func BenchmarkCMapGen_Set_Parallel(b *testing.B) {
 
 func BenchmarkCMapGen_Replace_Parallel(b *testing.B) {
 	m := NewCMapGen[string, int64]()
+	m.SetDefaultStrategy(NumericGreaterStrategy[int64]{})
 	m.Set("shared", 0)
 	b.RunParallel(func(pb *testing.PB) {
 		i := int64(0)
@@ -168,6 +173,7 @@ func BenchmarkCMapGen_Replace_Parallel(b *testing.B) {
 func BenchmarkCMapGen_MixedReadWrite(b *testing.B) {
 	const keyCount = 100
 	m := NewCMapGen[int, int64]()
+	m.SetDefaultStrategy(NumericGreaterStrategy[int64]{})
 	for i := range keyCount {
 		m.Set(i, int64(i))
 	}
