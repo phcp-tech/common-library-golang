@@ -15,6 +15,7 @@
 package maps
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 
@@ -30,12 +31,17 @@ type CMapGen[K comparable, V any] struct {
 	defaultCompare  CompareFunc[V]     // default compare function used by Replace when set
 }
 
-// NewCMapGen creates and returns a new CMapGen with the default NumericGreaterStrategy replacement strategy.
+// NewCMapGen creates and returns a new CMapGen with no default replacement
+// strategy configured. Until SetDefaultCompare or SetDefaultStrategy is
+// called, Replace behaves like ReplaceAlways (unconditional overwrite) — see
+// Replace's doc comment. V is unconstrained ("any"), so a strategy cannot be
+// wired up automatically here: NumericGreaterStrategy, the built-in
+// greater-value strategy, requires V to satisfy cmp.Ordered, which not every
+// V does (e.g. a struct value type). Call SetDefaultStrategy(NumericGreaterStrategy[V]{})
+// explicitly when V is ordered and "new value wins" is the desired behaviour.
 func NewCMapGen[K comparable, V any]() *CMapGen[K, V] {
 	return &CMapGen[K, V]{
 		maps: cmap.New[V](),
-		// The default string comparison strategy is used
-		defaultStrategy: NumericGreaterStrategy[V]{},
 	}
 }
 
@@ -51,7 +57,8 @@ func (m *CMapGen[K, V]) Get(key K) (V, bool) {
 
 // Replace conditionally updates the value for the given key according to the configured strategy.
 // If a default compare function is set it takes precedence; otherwise the default strategy is used.
-// If neither is configured, values are compared via their string representations.
+// If neither is configured, Replace always overwrites — identical to ReplaceAlways — since V is
+// unconstrained and there is no generally-correct way to compare two arbitrary values without one.
 // If the key does not exist it is always created. Returns true if the value was stored.
 func (m *CMapGen[K, V]) Replace(key K, value V) bool {
 	// step 1: check if a default comparison function
@@ -64,21 +71,15 @@ func (m *CMapGen[K, V]) Replace(key K, value V) bool {
 		return m.ReplaceWithStrategy(key, value, m.defaultStrategy)
 	}
 
-	// step 3: if no default strategy is set, the original string comparison logic is used
-	keyStr := keyToString(key)
-	val, ok := m.maps.Get(keyStr)
-	if ok {
-		// This assumes V can be compared (works for numeric types)
-		// For a more type-safe approach, you might want to add constraints
-		if fmt.Sprint(val) < fmt.Sprint(value) {
-			m.maps.Set(keyStr, value)
-			return true
-		}
-	} else {
-		m.maps.Set(keyStr, value)
-		return true
-	}
-	return false
+	// step 3: nothing configured — always overwrite (same as ReplaceAlways).
+	// A previous version of this fallback compared fmt.Sprint(oldValue) against
+	// fmt.Sprint(newValue) as a stand-in for a numeric comparison. That is a string
+	// comparison, not a numeric one, and gives wrong answers whenever the two
+	// values' string representations differ in length (e.g. 9 -> 10 was judged
+	// "not greater" because "10" < "9" lexicographically). See NumericGreaterStrategy
+	// for a real numeric/ordered comparison, which callers must now opt into
+	// explicitly via SetDefaultStrategy/SetDefaultCompare.
+	return m.ReplaceAlways(key, value)
 }
 
 // Delete removes the entry associated with the given key from the map.
@@ -202,14 +203,16 @@ func (s AlwaysReplaceStrategy[V]) ShouldReplace(oldValue, newValue V) bool {
 	return true
 }
 
-// NumericGreaterStrategy is a ReplaceStrategy that replaces the old value only when the
-// string representation of the new value is lexicographically greater than the old one.
-// For numeric types this is equivalent to a numeric greater-than comparison.
-type NumericGreaterStrategy[V any] struct{}
+// NumericGreaterStrategy is a ReplaceStrategy that replaces the old value only when
+// newValue is greater than oldValue. V must satisfy cmp.Ordered (numeric types and
+// string), so the comparison is a real ordered comparison — not a comparison of the
+// values' string representations, which would give wrong answers for numeric types
+// whenever the two values' formatted lengths differ (e.g. 9 vs 10).
+type NumericGreaterStrategy[V cmp.Ordered] struct{}
 
-// ShouldReplace returns true when the string representation of newValue is greater than that of oldValue.
+// ShouldReplace returns true when newValue is greater than oldValue.
 func (s NumericGreaterStrategy[V]) ShouldReplace(oldValue, newValue V) bool {
-	return fmt.Sprint(newValue) > fmt.Sprint(oldValue)
+	return newValue > oldValue
 }
 
 // TimestampStrategy is a ReplaceStrategy that accepts a new int64 value only when

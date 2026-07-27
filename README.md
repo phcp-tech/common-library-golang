@@ -353,9 +353,9 @@ Two implementations are provided:
 | Type | Key | Value | Strategy |
 |------|-----|-------|----------|
 | `CMap` | `string` (fixed) | `int64` (fixed) | Greater-value wins (built-in) |
-| `CMapGen[K, V]` | any `comparable` | any | Configurable via `SetDefaultCompare` or `SetDefaultStrategy` |
+| `CMapGen[K, V]` | any `comparable` | any | Unconfigured: always overwrites. Configurable via `SetDefaultCompare` or `SetDefaultStrategy` |
 
-Built-in strategy types: `NumericGreaterStrategy`, `AlwaysReplaceStrategy`, `TimestampStrategy`.
+Built-in strategy types: `NumericGreaterStrategy[V cmp.Ordered]` (real numeric/ordered comparison — requires `V` to satisfy `cmp.Ordered`), `AlwaysReplaceStrategy`, `TimestampStrategy`. Until `SetDefaultCompare`/`SetDefaultStrategy` is called, `CMapGen.Replace` behaves like `ReplaceAlways` — `V` is unconstrained, so there is no strategy that can be wired up automatically for an arbitrary type.
 
 ```go
 import "github.com/phcp-tech/common-library-golang/maps"
@@ -369,7 +369,7 @@ m.Replace("EURUSD", 10600)       // stored: 10600 > 10500
 m.ReplaceAlways("EURUSD", 9000)  // always stored
 m.ReplaceIfNotExists("GBPUSD", 12800) // stored only if key absent
 
-// Atomic read-modify-write.
+// Read-modify-write via callback (not atomic for concurrent writes to the same key — see below).
 m.UpsertWithCallback("USDJPY", 15100, func(exists bool, old, new int64) int64 {
     if !exists || new > old { return new }
     return old
@@ -380,6 +380,8 @@ cm := maps.NewCMap()
 cm.Set("tick", 10000)
 cm.Replace("tick", 10050) // stored: 10050 > 10000
 ```
+
+`Replace`/`ReplaceWithCompare`/`ReplaceWithStrategy`/`UpsertWithCallback` all read the old value and write the new one as two separately-locked operations, not one atomic operation — safe under concurrent writes to *different* keys, and safe (no corruption/panic) even under concurrent writes to the *same* key, but the value left standing after a race is whichever `Set` executed last, not necessarily the one the compare/strategy/callback logic says should have won. For a true atomic read-modify-write on a single key, call the underlying `cmap.ConcurrentMap.Upsert` directly — it holds the shard lock for the whole callback.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/maps#pkg-examples).
 
@@ -394,40 +396,40 @@ Intel® Core™ i7-11850H @ 2.50 GHz · 8 cores / 16 threads · 32 GB RAM · Go 
 
 | Benchmark | ns/op | Throughput | B/op | Allocs |
 |-----------|------:|----------:|-----:|-------:|
-| `Set` | 33.01 | ~30.3 M ops/s | 0 | 0 |
-| `Get` | 15.68 | ~63.8 M ops/s | 0 | 0 |
-| `Replace` | 43.42 | ~23.0 M ops/s | 0 | 0 |
-| `Set` (parallel, 16 goroutines) | 90.67 | ~11.0 M ops/s | 0 | 0 |
-| `Replace` (parallel, 16 goroutines) | 434.8 | ~2.3 M ops/s | 0 | 0 |
+| `Set` | 27.51 | ~36.3 M ops/s | 0 | 0 |
+| `Get` | 15.70 | ~63.7 M ops/s | 0 | 0 |
+| `Replace` | 43.99 | ~22.7 M ops/s | 0 | 0 |
+| `Set` (parallel, 16 goroutines) | 70.82 | ~14.1 M ops/s | 0 | 0 |
+| `Replace` (parallel, 16 goroutines) | 151.5 | ~6.6 M ops/s | 0 | 0 |
 
 **CMapGen** (generic `[K comparable, V any]`)
 
 | Benchmark | ns/op | Throughput | B/op | Allocs | Note |
 |-----------|------:|----------:|-----:|-------:|------|
-| `Set` | 94.20 | ~10.6 M ops/s | 0 | 0 | |
-| `Get` | 60.54 | ~16.5 M ops/s | 0 | 0 | |
-| `Replace` (default strategy) | 137.0 | ~7.3 M ops/s | 32 | 3 | ⚠ fmt.Sprint fallback allocates |
-| `ReplaceWithCompare` | 52.94 | ~18.9 M ops/s | 0 | 0 | recommended |
-| `ReplaceAlways` | 29.78 | ~33.6 M ops/s | 0 | 0 | |
-| `UpsertWithCallback` | 58.68 | ~17.0 M ops/s | 0 | 0 | |
-| `Set` (parallel, 16 goroutines) | 74.32 | ~13.5 M ops/s | 0 | 0 | |
-| `Replace` (parallel, 16 goroutines) | 81.61 | ~12.3 M ops/s | 32 | 3 | ⚠ see above |
-| Mixed read/write (parallel) | 26.08 | ~38.3 M ops/s | 10 | 1 | |
+| `Set` | 31.75 | ~31.5 M ops/s | 0 | 0 | |
+| `Get` | 18.20 | ~55.0 M ops/s | 0 | 0 | |
+| `Replace` (`NumericGreaterStrategy`, explicitly configured) | 47.63 | ~21.0 M ops/s | 0 | 0 | |
+| `ReplaceWithCompare` | 46.32 | ~21.6 M ops/s | 0 | 0 | |
+| `ReplaceAlways` | 30.05 | ~33.3 M ops/s | 0 | 0 | |
+| `UpsertWithCallback` | 49.29 | ~20.3 M ops/s | 0 | 0 | |
+| `Set` (parallel, 16 goroutines) | 71.17 | ~14.1 M ops/s | 0 | 0 | |
+| `Replace` (parallel, 16 goroutines) | 167.9 | ~6.0 M ops/s | 0 | 0 | |
+| Mixed read/write (parallel) | 25.96 | ~38.5 M ops/s | 0 | 0 | |
 
 **`sync.Map`** (stdlib reference)
 
 | Benchmark | ns/op | Throughput | B/op | Allocs |
 |-----------|------:|----------:|-----:|-------:|
-| `Store` | 60.96 | ~16.4 M ops/s | 56 | 1 |
-| `Load` | 10.66 | ~93.8 M ops/s | 0 | 0 |
-| `Store` (parallel, 16 goroutines) | 103.7 | ~9.6 M ops/s | 56 | 1 |
+| `Store` | 60.90 | ~16.4 M ops/s | 56 | 1 |
+| `Load` | 10.48 | ~95.4 M ops/s | 0 | 0 |
+| `Store` (parallel, 16 goroutines) | 110.0 | ~9.1 M ops/s | 56 | 1 |
 
 **Key observations**
 
-- `CMap.Set` is **~1.8× faster** than `sync.Map.Store` and allocates nothing.
-- `CMapGen.Replace` with a typed compare function (`ReplaceWithCompare` / `SetDefaultCompare`) is **zero-allocation**; the no-argument `Replace()` fallback uses `fmt.Sprint` internally and produces 3 allocations — always call `SetDefaultCompare` or `SetDefaultStrategy` at construction time.
-- `CMapGen.ReplaceAlways` is the fastest write path (~33.6 M ops/s) when no conditional logic is needed.
-- Under 16-goroutine parallel write contention `CMap.Replace` degrades to ~2.3 M ops/s due to single-key hot-spot; spreading writes across many keys restores throughput.
+- `CMap.Set` is **~2.2× faster** than `sync.Map.Store` and allocates nothing.
+- `CMapGen.Replace` is zero-allocation whether it's driven by an explicitly configured `NumericGreaterStrategy`/`SetDefaultStrategy`, `SetDefaultCompare`, or left unconfigured (in which case it behaves like `ReplaceAlways`, also zero-allocation) — there is no default path that falls back to string formatting.
+- `CMapGen.ReplaceAlways` is the fastest write path (~33.3 M ops/s) when no conditional logic is needed.
+- Under 16-goroutine parallel write contention `CMap.Replace` degrades to ~6.6 M ops/s due to single-key hot-spot; spreading writes across many keys restores throughput.
 
 ---
 
