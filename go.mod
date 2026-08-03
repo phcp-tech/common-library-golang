@@ -25,6 +25,7 @@ require (
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/providers/fs v1.0.0
 	github.com/knadh/koanf/v2 v2.3.5
+	github.com/maypok86/otter/v2 v2.3.0
 	github.com/natefinch/lumberjack v2.0.0+incompatible
 	github.com/orandin/slog-gorm v1.3.0
 	github.com/orcaman/concurrent-map/v2 v2.0.1
