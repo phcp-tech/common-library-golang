@@ -61,6 +61,7 @@ go test ./... -cover -timeout 60s
 | Basic | [`shutdown`](#shutdown--graceful-shutdown) | `.../common-library-golang/shutdown` | Block until OS signal or programmatic trigger, then continue for cleanup |
 | Basic | [`ringbuf`](#ringbuf--ring-buffers) | `.../common-library-golang/ringbuf` | Lock-free ring buffers (SPSC and MPSC) |
 | Basic | [`maps`](#maps--thread-safe-concurrent-maps) | `.../common-library-golang/maps` | Thread-safe generic concurrent maps with pluggable replacement strategies |
+| Basic | [`cache`](#cache--in-process-cache-otter) | `.../common-library-golang/cache` | In-process key-value cache with TTL, backed by [Otter](https://github.com/maypok86/otter) |
 | Basic | [`cgroup`](#cgroup--linux-resource-limits) | `.../common-library-golang/cgroup` | Read CPU and memory resource limits from cgroup v2 (Linux only; returns 0 on other platforms) |
 | Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
 | Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; 1st `Add()` = env, 2nd `Add()` = log (convention) |
@@ -430,6 +431,79 @@ Intel® Core™ i7-11850H @ 2.50 GHz · 8 cores / 16 threads · 32 GB RAM · Go 
 - `CMapGen.Replace` is zero-allocation whether it's driven by an explicitly configured `NumericGreaterStrategy`/`SetDefaultStrategy`, `SetDefaultCompare`, or left unconfigured (in which case it behaves like `ReplaceAlways`, also zero-allocation) — there is no default path that falls back to string formatting.
 - `CMapGen.ReplaceAlways` is the fastest write path (~33.3 M ops/s) when no conditional logic is needed.
 - Under 16-goroutine parallel write contention `CMap.Replace` degrades to ~6.6 M ops/s due to single-key hot-spot; spreading writes across many keys restores throughput.
+
+---
+
+## cache — In-Process Cache (Otter)
+
+An in-process key-value cache with TTL support, defined behind the `ICache`
+interface so callers never depend on the concrete implementation. The only
+implementation today, `OtterCache`, is backed by
+[maypok86/otter](https://github.com/maypok86/otter) (a W-TinyLFU admission
+cache). There is no `Default()`/`Component()` for this package — just the plain
+constructor, same as `httpclient`/`maps`/`ringbuf`.
+
+```go
+import "github.com/phcp-tech/common-library-golang/cache"
+
+c := cache.NewOtterCache() // capacity 10,000 entries, default TTL 1 hour
+
+// Config is optional — customize capacity and/or the default TTL:
+c2 := cache.NewOtterCache(cache.Config{MaxSize: 500, DefaultTTL: 10 * time.Minute})
+
+// DefaultTTL: cache.NoExpiry builds a cache that never expires entries —
+// this is a whole-cache setting: on a NoExpiry cache every Set's expire
+// argument is ignored (see below), there's no per-key "except this one".
+permanent := cache.NewOtterCache(cache.Config{DefaultTTL: cache.NoExpiry})
+
+_ = c.Set("session-token", "abc123", 5*time.Minute) // custom per-entry TTL
+_ = c.Set("counter", 1, 0)                          // 0 (or negative) uses the cache's default TTL
+
+val, ok := c.Get("session-token")
+
+_ = c.Update("counter", 2) // replaces the value, leaves the TTL untouched
+_ = c.Delete("session-token")
+
+c.Size()   // number of entries currently held (estimated)
+c.Keys()   // []interface{} snapshot of all keys
+c.Values() // []interface{} snapshot of all values
+_ = c.Clear()
+```
+
+**`expire <= 0` in `Set` does not mean "never expires"** — it means "use the
+cache's default TTL" (1 hour unless `Config.DefaultTTL` overrides it). This
+is the opposite of what a zero-value TTL means in some other cache APIs, so
+double-check this if you're porting code from one of those. For a cache
+where entries genuinely never expire, construct it with
+`Config.DefaultTTL: NoExpiry` instead — don't try to simulate "forever" with
+an arbitrarily large `expire` duration on a per-`Set` basis.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/cache#pkg-examples).
+
+### Performance
+
+Benchmarks run with `go test -bench=. -benchtime=2s -benchmem`.
+
+**Test environment**: Intel® Core™ i7-11850H @ 2.50 GHz · 8 cores / 16 threads · 32 GB RAM · Go 1.26.2 / Windows 11
+
+| Benchmark | ns/op | Throughput | B/op | Allocs |
+|-----------|------:|----------:|-----:|-------:|
+| `Set` | 389.4 | ~2.6 M ops/s | 120 | 4 |
+| `Set` (custom TTL) | 1175 | ~0.85 M ops/s | 118 | 4 |
+| `Get` (hit) | 638.8 | ~1.6 M ops/s | 16 | 2 |
+| `Get` (miss) | 176.6 | ~5.7 M ops/s | 24 | 2 |
+| Mixed (80% read / 20% write) | 239.7 | ~4.2 M ops/s | 34 | 2 |
+| Mixed, parallel (16 goroutines) | 85.43 | ~11.7 M ops/s | 33 | 2 |
+| `Delete` | 110.0 | ~9.1 M ops/s | 15 | 1 |
+| `Set` (1 KB value) | 448.7 | ~2.2 M ops/s (2282 MB/s) | 123 | 4 |
+| `Get` (1 KB value, hit) | 181.8 | ~5.5 M ops/s (5633 MB/s) | 16 | 1 |
+| `Get` (Zipf hot-key distribution) | 619.7 | ~1.6 M ops/s | 10 | 1 |
+
+**Key observations**
+
+- A cache **miss is ~3.6× faster than a hit** (176.6 ns vs 638.8 ns) — a hit runs Otter's `afterRead` bookkeeping (records the hit, updates the TinyLFU admission/eviction policy state), while a miss only records a counter and returns; this is inherent to the admission-cache design, not a bug.
+- `Set` with a custom TTL (1175 ns) costs **~3× a plain `Set`** (389.4 ns) — a custom TTL is a second call (`SetExpiresAfter` after `Set`), not a single write.
+- 16-goroutine parallel mixed read/write throughput (~11.7 M ops/s) is **higher**, not lower, than the single-goroutine `Get`/`Set` numbers — unlike `maps.CMap`'s single-key hot-spot case above, this benchmark spreads keys across a 10,000-key space, so contention stays low and the numbers reflect genuine parallel scaling rather than a hot-spot artifact.
 
 ---
 
