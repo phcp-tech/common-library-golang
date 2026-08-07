@@ -270,3 +270,63 @@ func TestGetLocalIpAddress_ReturnsValidIPv4(t *testing.T) {
 		}
 	}
 }
+
+func TestIsPrivateIP(t *testing.T) {
+	cases := []struct {
+		name string
+		ip   string
+		want bool
+	}{
+		// RFC 1918 private IPv4 ranges: should be private
+		{"10.0.0.0/8 lower bound", "10.0.0.0", true},
+		{"10.0.0.0/8 typical", "10.0.0.1", true},
+		{"10.0.0.0/8 upper bound", "10.255.255.255", true},
+		{"172.16.0.0/12 lower bound", "172.16.0.0", true},
+		{"172.16.0.0/12 typical", "172.16.5.5", true},
+		{"172.16.0.0/12 upper bound", "172.31.255.255", true},
+		{"192.168.0.0/16 lower bound", "192.168.0.0", true},
+		{"192.168.0.0/16 typical", "192.168.1.5", true},
+		{"192.168.0.0/16 upper bound", "192.168.255.255", true},
+
+		// just outside RFC 1918 boundaries: should NOT be private
+		{"just below 172.16.0.0/12", "172.15.255.255", false},
+		{"just above 172.16.0.0/12", "172.32.0.0", false},
+		{"just below 192.168.0.0/16", "192.167.255.255", false},
+
+		// 169.254.0.0/16 link-local: should NOT be private
+		{"169.254.0.0/16 lower bound", "169.254.0.0", false},
+		{"169.254.0.0/16 typical", "169.254.0.1", false},
+		{"169.254.0.0/16 address from conversation", "169.254.0.2", false},
+		{"169.254.0.0/16 mid range", "169.254.128.128", false},
+		{"169.254.0.0/16 upper bound", "169.254.255.255", false},
+		{"just below 169.254.0.0/16", "169.253.255.255", false},
+		{"just above 169.254.0.0/16", "169.255.0.0", false},
+
+		// public IPv4 addresses: should NOT be private
+		{"public IP: google dns", "8.8.8.8", false},
+		{"public IP: cloudflare dns", "1.1.1.1", false},
+
+		// loopback: should NOT be private
+		{"loopback", "127.0.0.1", false},
+
+		// RFC 4193 IPv6 unique local addresses: should be private
+		{"IPv6 unique local fc00::/7", "fc00::1", true},
+		{"IPv6 unique local fd00::/8", "fd12:3456:789a::1", true},
+
+		// IPv6 link-local: should NOT be private
+		{"IPv6 link-local fe80::/10", "fe80::1", false},
+
+		// invalid or empty input: should NOT be private
+		{"empty string", "", false},
+		{"not an IP", "not-an-ip", false},
+		{"out-of-range octets", "999.999.999.999", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsPrivateIP(tc.ip); got != tc.want {
+				t.Errorf("IsPrivateIP(%q) = %v, want %v", tc.ip, got, tc.want)
+			}
+		})
+	}
+}

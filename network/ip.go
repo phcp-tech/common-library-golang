@@ -152,6 +152,19 @@ func Ip2IntWithBigEndian(ipStr string) uint32 {
 	return binary.BigEndian.Uint32(ip)
 }
 
+// IsPrivateIP reports whether ipStr is a private IP address, i.e. within
+// RFC 1918 (IPv4: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) or RFC 4193
+// (IPv6 unique local addresses: fc00::/7). Link-local addresses (e.g.
+// 169.254.0.0/16) are NOT private and return false. An unparsable ipStr
+// also returns false.
+func IsPrivateIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsPrivate()
+}
+
 // IsValidAddr checks if the given string is a valid IP address with port or resolvable domain name with port
 func IsValidAddr(ipStr string) bool {
 	// split host and port
