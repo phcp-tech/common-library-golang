@@ -52,13 +52,13 @@ func ExampleInitDefault() {
 	fmt.Println(err != nil) // true — server unreachable
 }
 
-// ExampleChineseSortSql shows how to build an ORDER BY clause that
+// ExampleZhSortSql shows how to build an ORDER BY clause that
 // approximates pinyin ordering for a Chinese-text column, then append it
 // directly to a raw SELECT statement alongside dbgorm.PageSql for pagination.
-// This is PostgreSQL-specific — see ChineseSortSql's doc comment for why.
-func ExampleChineseSortSql() {
+// This is PostgreSQL-specific — see ZhSortSql's doc comment for why.
+func ExampleZhSortSql() {
 	para := dto.PageParameter{Sort: "name", Direction: "ASC"}
-	query := "SELECT * FROM products" + postgres.ChineseSortSql(&para)
+	query := "SELECT * FROM products" + postgres.ZhSortSql(&para)
 	fmt.Println(query)
 	// Output:
 	// SELECT * FROM products ORDER BY convert_to(name,'GBK') ASC

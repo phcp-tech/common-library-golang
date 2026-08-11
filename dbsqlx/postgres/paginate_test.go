@@ -21,7 +21,7 @@ import (
 	"github.com/phcp-tech/common-library-golang/dto"
 )
 
-func TestChineseSortSql(t *testing.T) {
+func TestZhSortSql(t *testing.T) {
 	tests := []struct {
 		name          string
 		para          dto.PageParameter
@@ -75,15 +75,15 @@ func TestChineseSortSql(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := postgres.ChineseSortSql(&tt.para)
+			got := postgres.ZhSortSql(&tt.para)
 			if got != tt.wantSQL {
-				t.Fatalf("ChineseSortSql() = %q, want %q", got, tt.wantSQL)
+				t.Fatalf("ZhSortSql() = %q, want %q", got, tt.wantSQL)
 			}
 			if tt.para.Sort != tt.wantSort {
-				t.Fatalf("ChineseSortSql() Sort = %q, want %q", tt.para.Sort, tt.wantSort)
+				t.Fatalf("ZhSortSql() Sort = %q, want %q", tt.para.Sort, tt.wantSort)
 			}
 			if tt.para.Direction != tt.wantDirection {
-				t.Fatalf("ChineseSortSql() Direction = %q, want %q", tt.para.Direction, tt.wantDirection)
+				t.Fatalf("ZhSortSql() Direction = %q, want %q", tt.para.Direction, tt.wantDirection)
 			}
 		})
 	}

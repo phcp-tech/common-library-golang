@@ -87,7 +87,7 @@ func OrderBy(allowed map[string]string, sort, direction string) func(*gorm.DB) *
 // database-specific SQL function (e.g. PostgreSQL's convert_to, MySQL's
 // CONVERT(... USING ...)) that this dialect-agnostic root package cannot
 // pick correctly on its own. For approximate pinyin ordering of Chinese
-// text, see the dedicated ChineseSortSql in the relevant dialect package
+// text, see the dedicated ZhSortSql in the relevant dialect package
 // (dbgorm/postgres, dbgorm/mysql) instead.
 func SortSql(para *dto.PageParameter) string {
 	// default sort by Id
@@ -101,7 +101,7 @@ func SortSql(para *dto.PageParameter) string {
 // NormalizeSortDirection returns direction upper-cased and trimmed, falling
 // back to "ASC" when it is empty or not one of "ASC"/"DESC". Exported so
 // dialect packages building their own ORDER BY expressions (e.g.
-// ChineseSortSql in dbgorm/postgres, dbgorm/mysql) apply the exact same
+// ZhSortSql in dbgorm/postgres, dbgorm/mysql) apply the exact same
 // direction rules SortSql does.
 func NormalizeSortDirection(direction string) string {
 	direction = strings.ToUpper(strings.TrimSpace(direction))
@@ -151,7 +151,7 @@ func PageSql(para *dto.PageParameter) string {
 // IsSafeSQLIdentifierPath reports whether value is a dot-separated path of
 // safe SQL identifiers (e.g. "table.column"), guarding SortSql against
 // injection via the Sort field. Exported so dialect packages building their
-// own ORDER BY expressions (e.g. ChineseSortSql in dbgorm/postgres,
+// own ORDER BY expressions (e.g. ZhSortSql in dbgorm/postgres,
 // dbgorm/mysql) can validate a column name with the same rules.
 func IsSafeSQLIdentifierPath(value string) bool {
 	if value == "" {
@@ -171,7 +171,7 @@ func IsSafeSQLIdentifierPath(value string) bool {
 // IsSafeSQLName reports whether value is a safe single SQL identifier:
 // letters, digits (not leading), and underscores only. Also usable to
 // validate a charset/encoding name interpolated directly into SQL (e.g. by
-// ChineseSortSql), since it follows the same safe-token shape.
+// ZhSortSql), since it follows the same safe-token shape.
 func IsSafeSQLName(value string) bool {
 	if value == "" {
 		return false
