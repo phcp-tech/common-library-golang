@@ -24,7 +24,7 @@ import (
 // defaultChineseCharset is used when para.Charset is empty.
 const defaultChineseCharset = "gbk"
 
-// ChineseSortSql builds an ORDER BY clause that approximates pinyin ordering
+// ZhSortSql builds an ORDER BY clause that approximates pinyin ordering
 // for a Chinese-text column, using MySQL's CONVERT(... USING charset) to
 // re-encode the column before comparing byte order under that charset's
 // default collation — gbk_chinese_ci sorts common Han characters roughly by
@@ -37,10 +37,10 @@ const defaultChineseCharset = "gbk"
 //
 // para.Sort and the resolved charset are validated with the same
 // identifier-safety rules dbsqlx.SortSql itself uses; if either is unsafe,
-// ChineseSortSql falls back to dbsqlx.SortSql's plain "ORDER BY <column>
+// ZhSortSql falls back to dbsqlx.SortSql's plain "ORDER BY <column>
 // <direction>" behaviour instead (which also handles defaulting Sort to
 // "id" and Direction to "ASC").
-func ChineseSortSql(para *dto.PageParameter) string {
+func ZhSortSql(para *dto.PageParameter) string {
 	charset := strings.ToLower(para.Charset)
 	if charset == "" {
 		charset = defaultChineseCharset
