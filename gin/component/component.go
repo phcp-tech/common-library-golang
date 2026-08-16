@@ -22,13 +22,15 @@ import (
 	"github.com/phcp-tech/common-library-golang/bootstrap"
 	"github.com/phcp-tech/common-library-golang/env"
 	libGin "github.com/phcp-tech/common-library-golang/gin"
+	slogGin "github.com/samber/slog-gin"
 )
 
 // Compile-time check: ginComponent implements bootstrap.IComponent.
 var _ bootstrap.IComponent = (*ginComponent)(nil)
 
 type ginComponent struct {
-	mount func(*gin.Engine)
+	mount   func(*gin.Engine)
+	filters []slogGin.Filter
 }
 
 func (g *ginComponent) Name() string { return "gin" }
@@ -43,7 +45,7 @@ func (g *ginComponent) Init() error {
 		origins = env.Env().Strings("cors.allow.origins.dev")
 	}
 
-	router := libGin.InitGin(origins)
+	router := libGin.InitGin(origins, g.filters...)
 	if g.mount != nil {
 		g.mount(router)
 	}
@@ -70,6 +72,11 @@ func (g *ginComponent) Close() {}
 //	    adapter.Mount(r)
 //	})).
 //	Add(httpComp.Component(func() http.Handler { return router }))
-func Component(mount func(*gin.Engine)) bootstrap.IComponent {
-	return &ginComponent{mount: mount}
+//
+// filters is optional (trailing variadic, existing callers passing only
+// mount are unaffected) and is passed straight through to libGin.InitGin -
+// see that function's doc comment. E.g. Component(mount, slogGin.IgnorePath("/"))
+// silences request logging for a noisy health-check endpoint.
+func Component(mount func(*gin.Engine), filters ...slogGin.Filter) bootstrap.IComponent {
+	return &ginComponent{mount: mount, filters: filters}
 }

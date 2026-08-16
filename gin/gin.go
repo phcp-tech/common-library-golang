@@ -68,7 +68,14 @@ func buildOriginMatchFunc(patterns []string) func(string) bool {
 // patterns and matched via AllowOriginFunc (single-level wildcard * means one label,
 // no dots). The caller is responsible for passing the correct origin list.
 // Pass nil or an empty slice to disable CORS.
-func InitGin(corsOrigins []string) *gin.Engine {
+//
+// filters is optional (trailing variadic, so existing callers passing only
+// corsOrigins are unaffected) and is passed straight through to slogGin's own
+// request-logging middleware - see github.com/samber/slog-gin's Filter type
+// and its filters.go helpers (IgnorePath/IgnorePathPrefix/IgnoreStatus/etc.).
+// A filter returning false for a given request skips logging it entirely -
+// e.g. slogGin.IgnorePath("/") to silence a noisy health-check endpoint.
+func InitGin(corsOrigins []string, filters ...slogGin.Filter) *gin.Engine {
 	//1. Create gin instance after SetMode
 	// ReleaseMode suppresses framework route-registration logs in all environments.
 	gin.SetMode(gin.ReleaseMode)
@@ -80,7 +87,11 @@ func InitGin(corsOrigins []string) *gin.Engine {
 	//2. Add the slogGin middleware to all routes.
 	// The middleware will log all requests attributes under a "http" group.
 	// slog.Default() returns the project logger after log.InitLog() calls slog.SetDefault.
-	router.Use(slogGin.New(slog.Default()))
+	// NewWithFilters with zero filters behaves identically to New (see
+	// slog-gin's own New(): it's defined as NewWithConfig(logger,
+	// DefaultConfig()), whose Filters field is already an empty slice) - so
+	// this one call covers both the filtered and unfiltered case.
+	router.Use(slogGin.NewWithFilters(slog.Default(), filters...))
 	router.Use(gin.Recovery())
 
 	//3. Setup cors — enabled when corsOrigins is non-empty
