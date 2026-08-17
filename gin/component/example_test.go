@@ -15,11 +15,16 @@
 package component_test
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	ginComp "github.com/phcp-tech/common-library-golang/gin/component"
+	slogGin "github.com/samber/slog-gin"
 )
 
 // ExampleComponent shows how gin.Component() is registered in a bootstrap chain.
@@ -45,4 +50,50 @@ func ExampleComponent() {
 	// Output:
 	// true
 	// gin
+}
+
+// ExampleComponent_filters shows how to silence request logging for specific
+// endpoints when wiring gin.Component() into a bootstrap chain - e.g. a
+// noisy health-check hit repeatedly by a load balancer, or a metrics-scrape
+// path. filters is a trailing variadic (Component(mount func(*gin.Engine),
+// filters ...slogGin.Filter)), passed straight through to libGin.InitGin -
+// see gin's own ExampleInitGin_filters for the equivalent direct-InitGin
+// usage, including why multiple endpoints need no new plumbing (either
+// slogGin.IgnorePath itself is variadic, or pass several distinct filters).
+// A request is logged unless ANY filter returns false for it - filters
+// combine with OR, not AND.
+func ExampleComponent_filters() {
+	// Route logging to a buffer instead of stderr so this example can
+	// assert on it. Real callers never do this.
+	var buf bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+
+	var router *gin.Engine
+	c := ginComp.Component(func(r *gin.Engine) {
+		router = r
+		for _, path := range []string{"/healthz", "/readyz", "/metrics/cpu", "/api/data"} {
+			r.GET(path, func(c *gin.Context) { c.Status(http.StatusOK) })
+		}
+	},
+		slogGin.IgnorePath("/healthz", "/readyz"), // one call, multiple paths
+		slogGin.IgnorePathPrefix("/metrics"),      // a second, distinct filter
+	)
+	if err := c.Init(); err != nil {
+		fmt.Println("Init error:", err)
+		return
+	}
+
+	for _, path := range []string{"/healthz", "/readyz", "/metrics/cpu", "/api/data"} {
+		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+
+	fmt.Println(strings.Contains(buf.String(), "/healthz"))
+	fmt.Println(strings.Contains(buf.String(), "/readyz"))
+	fmt.Println(strings.Contains(buf.String(), "/metrics/cpu"))
+	fmt.Println(strings.Contains(buf.String(), "/api/data"))
+	// Output:
+	// false
+	// false
+	// false
+	// true
 }
