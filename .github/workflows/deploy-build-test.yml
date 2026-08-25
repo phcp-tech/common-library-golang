@@ -45,6 +45,7 @@ jobs:
       # 6. Run unit tests, use short mode to skip long-running tests, e.g. httpserver test and generate coverage report
       - name: Run Unit Tests
         run: |
+          GOEXPERIMENT=jsonv2 go vet ./...
           GOEXPERIMENT=jsonv2 go test ./... -short -coverprofile=coverage.out -covermode=atomic -timeout 60s
 
       # 7. Build binary
