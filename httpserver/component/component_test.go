@@ -132,3 +132,22 @@ func TestComponentWithRunner_ReturnsNonNil(t *testing.T) {
 		t.Error("ComponentWithRunner() returned nil")
 	}
 }
+
+// TestComponent_WithConfig_InitReturnsNil verifies the optional Config
+// parameter (added for callers that need to override defaults like
+// WriteTimeout without giving up bootstrap's lifecycle management - see
+// Component's doc comment) doesn't break Init(), and that setting Port on it
+// has no effect: Port is always overwritten from the http.server.port env
+// key (here, the testdata config's "99999", which fails immediately - the
+// same async-error path TestComponent_Init_ReturnsNil already covers).
+func TestComponent_WithConfig_InitReturnsNil(t *testing.T) {
+	c := component.Component(
+		func() http.Handler { return http.NewServeMux() },
+		httpserver.Config{Port: "1", WriteTimeout: httpserver.NoWriteTimeout},
+	)
+	if err := c.Init(); err != nil {
+		t.Errorf("Component(handler, cfg).Init() = %v, want nil (server starts async)", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	c.Close()
+}

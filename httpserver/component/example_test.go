@@ -23,7 +23,9 @@ import (
 )
 
 // ExampleComponent shows how Component() is used in a bootstrap registration chain.
-// It reads app.runmode and http.server.port from env during Init().
+// It reads http.server.port from env during Init(); this package always
+// returns a plain HTTP/HTTPS runner (see httpserver/componentwithlambda for
+// the sibling that also reads app.runmode to switch to a Lambda runner).
 //
 // Init() starts the HTTP server in a background goroutine and returns immediately.
 // Startup errors (e.g. port already in use) are handled asynchronously via
@@ -39,6 +41,24 @@ import (
 //	Add(httpComp.Component(func() http.Handler { return router }))
 func ExampleComponent() {
 	c := httpComp.Component(func() http.Handler { return http.NewServeMux() })
+	fmt.Println(c != nil)
+	// Output:
+	// true
+}
+
+// ExampleComponent_withConfig shows the optional Config parameter, for
+// services that need to customize the runner (e.g. raising or disabling the
+// write timeout for a long-lived SSE/streaming endpoint) without giving up
+// bootstrap's lifecycle management.
+//
+// cfg's Port field is always overwritten from the http.server.port env key
+// regardless of what's set here. Pass at most one Config; see [Component]'s
+// doc comment for the full contract.
+func ExampleComponent_withConfig() {
+	c := httpComp.Component(
+		func() http.Handler { return http.NewServeMux() },
+		httpserver.Config{WriteTimeout: httpserver.NoWriteTimeout},
+	)
 	fmt.Println(c != nil)
 	// Output:
 	// true

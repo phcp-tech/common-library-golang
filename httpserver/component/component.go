@@ -38,11 +38,16 @@ type httpComponent struct {
 }
 
 // loadFromEnv creates an HTTP server IRunner from the koanf env singleton.
-// It reads app.runmode and http.server.port, returning the appropriate IRunner.
-func loadFromEnv() httpserver.IRunner {
-	port := env.Env().String("http.server.port")
-	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", port))
-	return httpserver.NewHttpServer(httpserver.Config{Port: port})
+// base supplies every Config field except Port, which always comes from the
+// http.server.port env key regardless of what base.Port is set to - matching
+// every other consumer's convention of configuring the listen port via env,
+// not code.
+func loadFromEnv(base httpserver.Config) func() httpserver.IRunner {
+	return func() httpserver.IRunner {
+		base.Port = env.Env().String("http.server.port")
+		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", base.Port))
+		return httpserver.NewHttpServer(base)
+	}
 }
 
 func (h *httpComponent) Name() string { return "httpserver" }
@@ -94,6 +99,12 @@ func ComponentWithRunner(handler func() http.Handler, factory func() httpserver.
 // defers evaluation until Init() time, at which point the Gin component has
 // already been initialised.
 //
+// cfg is optional; pass at most one - extra values beyond the first are
+// ignored. It supplies every httpserver.Config field except Port, which is
+// always overwritten from the http.server.port env key regardless of what
+// cfg.Port is set to. Omitting cfg reproduces this function's previous
+// behavior (a Config with only Port set).
+//
 // Typical usage with a bridge variable in main:
 //
 //	var router *gin.Engine
@@ -102,6 +113,17 @@ func ComponentWithRunner(handler func() http.Handler, factory func() httpserver.
 //	    adapter.Mount(r)
 //	})).
 //	Add(httpComp.Component(func() http.Handler { return router }))
-func Component(handler func() http.Handler) bootstrap.IComponent {
-	return ComponentWithRunner(handler, loadFromEnv)
+//
+// A service with a long-lived SSE/streaming endpoint can raise (or disable)
+// the write timeout without giving up bootstrap's lifecycle management (see
+// [ComponentWithRunner] for the previous, more verbose way to do this):
+//
+//	Add(httpComp.Component(func() http.Handler { return router },
+//	    httpserver.Config{WriteTimeout: httpserver.NoWriteTimeout}))
+func Component(handler func() http.Handler, cfg ...httpserver.Config) bootstrap.IComponent {
+	var base httpserver.Config
+	if len(cfg) > 0 {
+		base = cfg[0]
+	}
+	return ComponentWithRunner(handler, loadFromEnv(base))
 }
