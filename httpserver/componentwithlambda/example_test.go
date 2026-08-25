@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/phcp-tech/common-library-golang/httpserver"
 	httpComp "github.com/phcp-tech/common-library-golang/httpserver/componentwithlambda"
 )
 
@@ -44,6 +45,29 @@ import (
 //	    Run()
 func ExampleComponent() {
 	c := httpComp.Component(func() http.Handler { return http.NewServeMux() })
+	fmt.Println(c != nil)
+	// Output:
+	// true
+}
+
+// ExampleComponent_withConfig shows the optional Config parameter, for
+// services that need to customize the VM-mode runner (e.g. raising or
+// disabling the write timeout for a long-lived SSE/streaming endpoint)
+// without losing Lambda support.
+//
+// cfg only applies to the VM-mode branch: its Port field is always
+// overwritten from the http.server.port env key regardless of what's set
+// here, and Lambda mode ignores cfg entirely (AWS controls that runtime's
+// lifecycle, not this package). Pass at most one Config; see [Component]'s
+// doc comment for the full contract.
+//
+//	Add(httpComp.Component(func() http.Handler { return router },
+//	    httpserver.Config{WriteTimeout: httpserver.NoWriteTimeout})).
+func ExampleComponent_withConfig() {
+	c := httpComp.Component(
+		func() http.Handler { return http.NewServeMux() },
+		httpserver.Config{WriteTimeout: httpserver.NoWriteTimeout},
+	)
 	fmt.Println(c != nil)
 	// Output:
 	// true

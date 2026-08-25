@@ -39,16 +39,24 @@ import (
 	"github.com/phcp-tech/common-library-golang/httpserver/lambda"
 )
 
-// loadFromEnv selects the appropriate IRunner based on app.runmode.
-func loadFromEnv() httpserver.IRunner {
-	if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
-		slog.Info("Http server is running under AWS-LAMBDA")
-		return lambda.NewHttpServer()
-	}
+// loadFromEnv selects the appropriate IRunner based on app.runmode. base
+// supplies the VM-mode Config to use for every field except Port, which
+// always comes from the http.server.port env key regardless of what
+// base.Port is set to - matching every other VM-mode consumer's convention
+// of configuring the listen port via env, not code. Lambda mode ignores base
+// entirely: AWS controls that runtime's request lifecycle, not this package,
+// so there is nothing in Config (timeouts, TLS files, ...) for it to apply.
+func loadFromEnv(base httpserver.Config) func() httpserver.IRunner {
+	return func() httpserver.IRunner {
+		if strings.EqualFold(env.Env().String("app.runmode"), "aws_lambda") {
+			slog.Info("Http server is running under AWS-LAMBDA")
+			return lambda.NewHttpServer()
+		}
 
-	port := env.Env().String("http.server.port")
-	slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", port))
-	return httpserver.NewHttpServer(httpserver.Config{Port: port})
+		base.Port = env.Env().String("http.server.port")
+		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", base.Port))
+		return httpserver.NewHttpServer(base)
+	}
 }
 
 // Component wraps the HTTP server as a bootstrap.IComponent with Lambda support.
@@ -56,6 +64,15 @@ func loadFromEnv() httpserver.IRunner {
 // handler is a lazy provider called during Init() to obtain the http.Handler
 // (typically *gin.Engine). The runner is selected at Init() time based on the
 // app.runmode env key.
+//
+// cfg is optional and configures the VM/plain-HTTP runner branch only - pass
+// at most one; extra values beyond the first are ignored. Its Port field is
+// always overwritten from the http.server.port env key regardless of what
+// it's set to, so it only needs to carry the fields httpserver.Config
+// otherwise defaults (WriteTimeout, ReadTimeout, TLS files, ...). The Lambda
+// runner takes no config at all, so cfg has no effect when app.runmode is
+// "aws_lambda". Omitting cfg entirely reproduces this function's previous
+// behavior (a Config with only Port set).
 //
 // Typical usage with a bridge variable in main:
 //
@@ -65,6 +82,17 @@ func loadFromEnv() httpserver.IRunner {
 //	    adapter.Mount(r)
 //	})).
 //	Add(httpComp.Component(func() http.Handler { return router }))
-func Component(handler func() http.Handler) bootstrap.IComponent {
-	return httpComp.ComponentWithRunner(handler, loadFromEnv)
+//
+// A service with a long-lived SSE/streaming endpoint can raise (or disable)
+// the VM-mode write timeout without losing Lambda support - Lambda mode is
+// unaffected by this option:
+//
+//	Add(httpComp.Component(func() http.Handler { return router },
+//	    httpserver.Config{WriteTimeout: httpserver.NoWriteTimeout}))
+func Component(handler func() http.Handler, cfg ...httpserver.Config) bootstrap.IComponent {
+	var base httpserver.Config
+	if len(cfg) > 0 {
+		base = cfg[0]
+	}
+	return httpComp.ComponentWithRunner(handler, loadFromEnv(base))
 }

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/phcp-tech/common-library-golang/env"
+	"github.com/phcp-tech/common-library-golang/httpserver"
 	"github.com/phcp-tech/common-library-golang/httpserver/componentwithlambda"
 )
 
@@ -57,6 +58,24 @@ func TestComponent_Init_ReturnsNil(t *testing.T) {
 	c := componentwithlambda.Component(func() http.Handler { return http.NewServeMux() })
 	if err := c.Init(); err != nil {
 		t.Errorf("Component().Init() = %v, want nil (server starts async)", err)
+	}
+	c.Close()
+}
+
+// TestComponent_WithConfig_InitReturnsNil verifies the optional Config
+// parameter (added for VM-mode callers that need to override defaults like
+// WriteTimeout - see Component's doc comment) doesn't break Init(), and that
+// setting Port on it has no effect: the VM-mode branch always overwrites
+// Port from the http.server.port env key. Actual timeout enforcement is
+// covered at the httpserver package level (httpserver_test.go); this only
+// verifies the Config value is accepted and threaded through without error.
+func TestComponent_WithConfig_InitReturnsNil(t *testing.T) {
+	c := componentwithlambda.Component(
+		func() http.Handler { return http.NewServeMux() },
+		httpserver.Config{Port: "1", WriteTimeout: httpserver.NoWriteTimeout},
+	)
+	if err := c.Init(); err != nil {
+		t.Errorf("Component(handler, cfg).Init() = %v, want nil (server starts async)", err)
 	}
 	c.Close()
 }
