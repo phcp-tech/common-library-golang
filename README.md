@@ -1,5 +1,9 @@
 # PHCP: common-library-golang
 
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README.zh.md">简体中文</a>
+</p>
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/phcp-tech/common-library-golang.svg)](https://pkg.go.dev/github.com/phcp-tech/common-library-golang)
 [![LICENSE](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://github.com/phcp-tech/common-library-golang/blob/main/LICENSE)
 ![CI](https://github.com/phcp-tech/common-library-golang/actions/workflows/deploy-build-test.yml/badge.svg)
