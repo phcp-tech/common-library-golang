@@ -35,7 +35,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.1'
 
       # 5. Download Go dependencies
       - name: Download Go Modules
@@ -45,13 +45,13 @@ jobs:
       # 6. Run unit tests, use short mode to skip long-running tests, e.g. httpserver test and generate coverage report
       - name: Run Unit Tests
         run: |
-          GOEXPERIMENT=jsonv2 go vet ./...
-          GOEXPERIMENT=jsonv2 go test ./... -short -coverprofile=coverage.out -covermode=atomic -timeout 60s
+          go vet ./...
+          go test ./... -short -coverprofile=coverage.out -covermode=atomic -timeout 60s
 
       # 7. Build binary
       - name: Build Binary
         run: |
-          GOEXPERIMENT=jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
             go build ./...
 
       # 8. Show build result
