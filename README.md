@@ -238,7 +238,7 @@ router.GET("/version", func(c *gin.Context) {
 //   "name": "my-service",
 //   "version": "1.2.3",
 //   "environment": "production",
-//   "goVersion": "go1.26.1",
+//   "goVersion": "go1.27.1",
 //   "buildInfo": "v1.2.3"
 // }
 ```
