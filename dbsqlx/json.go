@@ -49,7 +49,8 @@ import (
 // call site remembered to guard against it.
 //
 // Deliberately not encoding/json.RawMessage: some of this library's
-// consumers build with GOEXPERIMENT=jsonv2, under which RawMessage no
+// consumers are on Go 1.27+ using the now-stable encoding/json/v2 (no
+// GOEXPERIMENT=jsonv2 flag needed anymore), under which RawMessage no
 // longer satisfies database/sql's generic []byte-scan fallback — Scan then
 // errors ("unsupported Scan ... into type *jsontext.Value") for both NULL
 // and non-NULL driver values. JSONRaw sidesteps that fallback entirely by
