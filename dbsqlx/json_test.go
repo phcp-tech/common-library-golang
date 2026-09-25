@@ -135,7 +135,7 @@ func TestJSONRaw_Value(t *testing.T) {
 		j    dbsqlx.JSONRaw
 		want any
 	}{
-		{"non-empty passes through as []byte", dbsqlx.JSONRaw(`{"a":1}`), []byte(`{"a":1}`)},
+		{"non-empty binds as JSON text", dbsqlx.JSONRaw(`{"a":1}`), `{"a":1}`},
 		{"nil becomes SQL NULL, not an empty string", nil, nil},
 		{"empty (non-nil) becomes SQL NULL, not an empty string", dbsqlx.JSONRaw{}, nil},
 	}
@@ -151,7 +151,7 @@ func TestJSONRaw_Value(t *testing.T) {
 				}
 				return
 			}
-			if string(got.([]byte)) != string(tt.want.([]byte)) {
+			if got.(string) != tt.want.(string) {
 				t.Fatalf("Value = %v, want %v", got, tt.want)
 			}
 		})
