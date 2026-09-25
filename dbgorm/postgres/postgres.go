@@ -65,7 +65,22 @@ func Dialector(conf *Config) (gorm.Dialector, error) {
 		parts = append(parts, fmt.Sprintf("search_path=%s", conf.SearchPath))
 	}
 	dsn := strings.Join(parts, " ")
-	return gormpostgres.Open(dsn), nil
+	// PreferSimpleProtocol sets pgx's DefaultQueryExecMode to
+	// QueryExecModeSimpleProtocol under the hood - see dbsqlx/postgres.DSN's
+	// identical default_query_exec_mode setting for the full rationale.
+	// Without it, pgx's default extended-protocol mode caches prepared
+	// statements per physical backend connection, which breaks under a
+	// PgBouncer/Supavisor transaction-mode pooler (e.g. Supabase's
+	// transaction pooler, port 6543): a later query can land on a different
+	// physical backend than an earlier one and fail with "prepared
+	// statement does not exist". Simple protocol works under both
+	// session-mode and transaction-mode pooling (and direct connections),
+	// so it's set unconditionally rather than gated behind another config
+	// flag.
+	return gormpostgres.New(gormpostgres.Config{
+		DSN:                  dsn,
+		PreferSimpleProtocol: true,
+	}), nil
 }
 
 // NewPostgres opens a PostgreSQL-backed GORM database.

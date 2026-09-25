@@ -22,6 +22,7 @@ import (
 
 	"github.com/phcp-tech/common-library-golang/dbsqlc"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -62,6 +63,19 @@ func NewPostgres(conf *Config) (*pgxpool.Pool, error) {
 	if conf.SearchPath != "" {
 		poolConfig.ConnConfig.RuntimeParams["search_path"] = conf.SearchPath
 	}
+
+	// pgx's default extended-protocol mode caches prepared statements per
+	// physical backend connection - see dbsqlx/postgres.DSN's identical
+	// default_query_exec_mode setting for the full rationale. Under a
+	// PgBouncer/Supavisor transaction-mode pooler (e.g. Supabase's
+	// transaction pooler, port 6543), a later query can land on a different
+	// physical backend than an earlier one and fail with "prepared statement
+	// does not exist". Simple protocol sends the full SQL text every time
+	// instead of caching, which works under both session-mode and
+	// transaction-mode pooling (and direct connections) - set
+	// unconditionally so switching pooler modes later doesn't require
+	// remembering to also flip this setting.
+	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 	// Set default values for connection pool settings
 	poolConfig.MaxConns = int32(dbsqlc.MaxOpenConns)

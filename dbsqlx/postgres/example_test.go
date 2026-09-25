@@ -67,7 +67,7 @@ func ExampleDSN() {
 	fmt.Println(dsn)
 	// Output:
 	// true
-	// host=localhost port=5432 user=user password=pass dbname=mydb sslmode=disable TimeZone=UTC search_path=myschema
+	// host=localhost port=5432 user=user password=pass dbname=mydb sslmode=disable TimeZone=UTC default_query_exec_mode=simple_protocol search_path=myschema
 }
 
 // ExampleZhSortSql shows how to build an ORDER BY clause that

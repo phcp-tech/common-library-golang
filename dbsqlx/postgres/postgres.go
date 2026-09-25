@@ -49,6 +49,18 @@ func DSN(conf *Config) (string, error) {
 	}
 
 	// Another way for search_path: options='-c search_path=path1,path2'
+	//
+	// default_query_exec_mode=simple_protocol: pgx's default extended-protocol
+	// mode caches prepared statements per physical backend connection. That
+	// breaks under a PgBouncer/Supavisor transaction-mode pooler (e.g.
+	// Supabase's transaction pooler, port 6543) - the pooler only binds a
+	// physical backend to a client for the duration of one transaction, so a
+	// later call can land on a different backend that never saw the earlier
+	// PREPARE, and fails with "prepared statement does not exist". Simple
+	// protocol sends the full SQL text every time instead of caching, which
+	// works under both session-mode and transaction-mode pooling (and direct
+	// connections) - set unconditionally so switching pooler modes later
+	// doesn't require remembering to also flip a driver setting.
 	parts := []string{
 		fmt.Sprintf("host=%s", conf.Host),
 		fmt.Sprintf("port=%s", conf.Port),
@@ -57,6 +69,7 @@ func DSN(conf *Config) (string, error) {
 		fmt.Sprintf("dbname=%s", conf.Database),
 		"sslmode=disable",
 		"TimeZone=UTC",
+		"default_query_exec_mode=simple_protocol",
 	}
 	if conf.SearchPath != "" {
 		parts = append(parts, fmt.Sprintf("search_path=%s", conf.SearchPath))

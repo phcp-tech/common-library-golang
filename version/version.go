@@ -32,6 +32,7 @@ import (
 type Version struct {
 	Name        string `json:"name,omitempty"`
 	Version     string `json:"version,omitempty"`
+	Edition     string `json:"edition,omitempty"`     // application edition (e.g. free, team, enterprise)
 	Environment string `json:"environment,omitempty"` // runtime environment (e.g. production, staging)
 	GoVersion   string `json:"goVersion,omitempty"`   // Go toolchain version used to build the binary
 	BuildInfo   string `json:"buildInfo,omitempty"`   // module version from the embedded build info
