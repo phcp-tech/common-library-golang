@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package postgres_test
+package postgres
 
 import (
 	"os"
 	"testing"
 
-	"github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/phcp-tech/common-library-golang/env"
 )
 
@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestDefault_BeforeInit_IsNil(t *testing.T) {
-	if postgres.Default() != nil {
+	if Default() != nil {
 		t.Skip("singleton already initialised in this process — cannot test pre-init state")
 	}
 }
@@ -46,13 +46,13 @@ func TestDefault_BeforeInit_IsNil(t *testing.T) {
 // ─── Singleton lifecycle ──────────────────────────────────────────────────────
 
 func TestSingleton_Lifecycle(t *testing.T) {
-	if postgres.Default() != nil {
+	if Default() != nil {
 		t.Skip("singleton already initialised before lifecycle test ran")
 	}
 
 	// InitDefault with an unreachable host: NewPostgres performs an eager
 	// connectivity check (show search_path), so it returns an error immediately.
-	err := postgres.InitDefault(&postgres.Config{
+	err := InitDefault(&Config{
 		Host:            "127.0.0.1",
 		Port:            "19997",
 		Database:        "noexist",
@@ -68,13 +68,13 @@ func TestSingleton_Lifecycle(t *testing.T) {
 	}
 
 	// After a failed InitDefault the singleton remains nil.
-	if postgres.Default() != nil {
+	if Default() != nil {
 		t.Fatal("Default() should be nil after a failed InitDefault")
 	}
 
 	// Second InitDefault is a no-op (sync.Once) — returns nil even though the
 	// first call failed; the instance stays nil.
-	if err := postgres.InitDefault(&postgres.Config{
+	if err := InitDefault(&Config{
 		Host:            "127.0.0.1",
 		Port:            "19997",
 		Database:        "other",
@@ -94,7 +94,7 @@ func TestSingleton_Lifecycle(t *testing.T) {
 func TestNewPostgres_EagerCheck_ReturnsError(t *testing.T) {
 	// NewPostgres issues "show search_path" to verify connectivity.
 	// With an unreachable host it returns a non-nil error immediately.
-	pool, err := postgres.NewPostgres(&postgres.Config{
+	pool, err := NewPostgres(&Config{
 		Host:            "127.0.0.1",
 		Port:            "19998",
 		Database:        "noexist",
@@ -111,5 +111,45 @@ func TestNewPostgres_EagerCheck_ReturnsError(t *testing.T) {
 	}
 	if pool != nil {
 		t.Fatal("NewPostgres should return nil pool on error")
+	}
+}
+
+func TestPoolConfigQueryExecMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		want    pgx.QueryExecMode
+		wantErr bool
+	}{
+		{name: "pgx default", want: pgx.QueryExecModeCacheStatement},
+		{name: "cache statement", mode: "cache_statement", want: pgx.QueryExecModeCacheStatement},
+		{name: "cache describe", mode: "cache_describe", want: pgx.QueryExecModeCacheDescribe},
+		{name: "describe exec", mode: "describe_exec", want: pgx.QueryExecModeDescribeExec},
+		{name: "simple protocol", mode: "simple_protocol", want: pgx.QueryExecModeSimpleProtocol},
+		{name: "invalid", mode: "invalid", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			poolConfig, err := newPoolConfig(&Config{
+				Host:          "localhost",
+				Port:          "5432",
+				Database:      "app",
+				Username:      "user",
+				Password:      "pass",
+				QueryExecMode: tt.mode,
+			})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("newPoolConfig should reject the query execution mode")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("newPoolConfig: %v", err)
+			}
+			if poolConfig.ConnConfig.DefaultQueryExecMode != tt.want {
+				t.Fatalf("query mode = %v, want %v", poolConfig.ConnConfig.DefaultQueryExecMode, tt.want)
+			}
+		})
 	}
 }

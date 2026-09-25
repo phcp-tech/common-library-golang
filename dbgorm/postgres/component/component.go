@@ -28,7 +28,7 @@ import (
 // and initialises the process-wide default GORM database.
 // Configuration keys:
 //
-//	db.host, db.port, db.name, db.schema, db.username, db.password
+//	db.host, db.port, db.name, db.schema, db.username, db.password, db.query.exec.mode
 //	db.max.open.conns, db.max.idle.conns
 //	db.conn.max.lifetime, db.conn.max.idletime
 //
@@ -42,6 +42,7 @@ func loadFromEnv() error {
 		SearchPath:      env.Env().String("db.schema"),
 		Username:        env.Env().String("db.username"),
 		Password:        env.Env().String("db.password"),
+		QueryExecMode:   env.Env().String("db.query.exec.mode"),
 		MaxOpenConns:    env.Env().Int("db.max.open.conns"),
 		MaxIdleConns:    env.Env().Int("db.max.idle.conns"),
 		ConnMaxLifetime: env.Env().Int("db.conn.max.lifetime"),

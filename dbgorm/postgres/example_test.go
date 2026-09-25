@@ -38,6 +38,26 @@ func ExampleNewPostgres() {
 	// true
 }
 
+// ExampleDialector_queryExecMode shows how to choose a pgx execution mode
+// without opening a database connection. Use cache_statement only with a
+// stable session-pool or direct PostgreSQL connection; transaction poolers
+// such as Supabase 6543 must explicitly set QueryExecModeExec.
+func ExampleDialector_queryExecMode() {
+	dialector, err := postgres.Dialector(&postgres.Config{
+		Host:          "localhost",
+		Port:          "5432",
+		Database:      "mydb",
+		Username:      "user",
+		Password:      "pass",
+		QueryExecMode: postgres.QueryExecModeCacheStatement,
+	})
+	fmt.Println(err)
+	fmt.Println(dialector != nil)
+	// Output:
+	// <nil>
+	// true
+}
+
 // ExampleInitDefault shows the default-instance pattern.
 // Call InitDefault once at application startup; dbgorm.Default() returns
 // the shared *gorm.DB for the process.

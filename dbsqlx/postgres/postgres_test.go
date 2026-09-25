@@ -61,6 +61,72 @@ func TestDSN_OmitsSearchPathWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestDSN_QueryExecMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+	}{
+		{name: "exec", mode: postgres.QueryExecModeExec},
+		{name: "cache statement", mode: postgres.QueryExecModeCacheStatement},
+		{name: "cache describe", mode: postgres.QueryExecModeCacheDescribe},
+		{name: "describe exec", mode: postgres.QueryExecModeDescribeExec},
+		{name: "simple protocol", mode: postgres.QueryExecModeSimpleProtocol},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dsn, err := postgres.DSN(&postgres.Config{
+				Host:          "localhost",
+				Port:          "5432",
+				Database:      "risk",
+				Username:      "risk",
+				Password:      "secret",
+				QueryExecMode: tt.mode,
+			})
+			if err != nil {
+				t.Fatalf("DSN: %v", err)
+			}
+			want := "default_query_exec_mode=" + tt.mode
+			if !strings.Contains(dsn, want) {
+				t.Errorf("dsn = %q, want it to contain %q", dsn, want)
+			}
+		})
+	}
+}
+
+func TestDSN_QueryExecModeEmpty_PreservesPGXDefault(t *testing.T) {
+	dsn, err := postgres.DSN(&postgres.Config{
+		Host:     "localhost",
+		Port:     "5432",
+		Database: "risk",
+		Username: "risk",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("DSN: %v", err)
+	}
+	if strings.Contains(dsn, "default_query_exec_mode=") {
+		t.Errorf("dsn = %q, want no default_query_exec_mode segment", dsn)
+	}
+}
+
+func TestDSN_QueryExecModeRejectsUnsupportedValue(t *testing.T) {
+	_, err := postgres.DSN(&postgres.Config{
+		Host:          "localhost",
+		Port:          "5432",
+		Database:      "risk",
+		Username:      "risk",
+		Password:      "secret",
+		QueryExecMode: "unsupported",
+	})
+	if err == nil {
+		t.Fatal("DSN() error = nil, want unsupported query execution mode error")
+	}
+	if !strings.Contains(err.Error(), "unsupported PostgreSQL query execution mode") {
+		t.Errorf("DSN() error = %q, want unsupported query execution mode error", err)
+	}
+}
+
 func TestDSN_RequiresStructuredFields(t *testing.T) {
 	if _, err := postgres.DSN(&postgres.Config{}); !errors.Is(err, dbsqlx.ErrMissingConfig) {
 		t.Fatalf("DSN empty config: err = %v, want ErrMissingConfig", err)

@@ -18,6 +18,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/phcp-tech/common-library-golang/dbsqlc/postgres"
 	"github.com/phcp-tech/common-library-golang/env"
 )
 
@@ -59,6 +60,29 @@ func TestComponent_Init_ReturnsErrorWhenDatabaseUnreachable(t *testing.T) {
 	err := Component().Init()
 	if err == nil {
 		t.Error("Component().Init() should return an error when the database is unreachable, got nil")
+	}
+}
+
+// TestLoadFromEnv_QueryExecMode verifies that db.query.exec.mode is passed to
+// the PostgreSQL configuration.
+func TestLoadFromEnv_QueryExecMode(t *testing.T) {
+	previous := postgresInitDefault
+	defer func() { postgresInitDefault = previous }()
+
+	var got *postgres.Config
+	postgresInitDefault = func(config *postgres.Config) error {
+		got = config
+		return nil
+	}
+
+	if err := loadFromEnv(); err != nil {
+		t.Fatalf("loadFromEnv() = %v, want nil", err)
+	}
+	if got == nil {
+		t.Fatal("postgresInitDefault was not called")
+	}
+	if got.QueryExecMode != postgres.QueryExecModeExec {
+		t.Errorf("QueryExecMode = %q, want %q", got.QueryExecMode, postgres.QueryExecModeExec)
 	}
 }
 

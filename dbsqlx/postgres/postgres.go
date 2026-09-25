@@ -34,6 +34,9 @@ type Config struct {
 	Username   string
 	Password   string
 	SearchPath string
+	// QueryExecMode selects a pgx query execution mode. The zero value preserves
+	// pgx's default; see the QueryExecMode constants for mode-specific constraints.
+	QueryExecMode string
 
 	// Pool tuning; zero values fall back to dbsqlx package defaults.
 	MaxOpenConns    int
@@ -42,25 +45,35 @@ type Config struct {
 	ConnMaxIdletime int
 }
 
+const (
+	// QueryExecModeExec uses the extended protocol without a prepared-statement cache.
+	QueryExecModeExec = "exec"
+	// QueryExecModeCacheStatement enables pgx's prepared-statement cache.
+	QueryExecModeCacheStatement = "cache_statement"
+	// QueryExecModeCacheDescribe caches parameter and result type descriptions.
+	QueryExecModeCacheDescribe = "cache_describe"
+	// QueryExecModeDescribeExec describes a statement before every execution.
+	QueryExecModeDescribeExec = "describe_exec"
+	// QueryExecModeSimpleProtocol uses pgx's simple query protocol.
+	QueryExecModeSimpleProtocol = "simple_protocol"
+)
+
 // DSN builds a libpq-style connection string from conf.
 func DSN(conf *Config) (string, error) {
 	if conf.Host == "" || conf.Port == "" || conf.Database == "" || conf.Username == "" {
 		return "", dbsqlx.ErrMissingConfig
 	}
+	queryExecMode, err := normalizeQueryExecMode(conf.QueryExecMode)
+	if err != nil {
+		return "", err
+	}
 
 	// Another way for search_path: options='-c search_path=path1,path2'
 	//
-	// default_query_exec_mode=simple_protocol: pgx's default extended-protocol
-	// mode caches prepared statements per physical backend connection. That
-	// breaks under a PgBouncer/Supavisor transaction-mode pooler (e.g.
-	// Supabase's transaction pooler, port 6543) - the pooler only binds a
-	// physical backend to a client for the duration of one transaction, so a
-	// later call can land on a different backend that never saw the earlier
-	// PREPARE, and fails with "prepared statement does not exist". Simple
-	// protocol sends the full SQL text every time instead of caching, which
-	// works under both session-mode and transaction-mode pooling (and direct
-	// connections) - set unconditionally so switching pooler modes later
-	// doesn't require remembering to also flip a driver setting.
+	// exec (the default) disables pgx's prepared-statement cache, which is
+	// required by PgBouncer/Supavisor transaction-mode poolers such as
+	// Supabase port 6543. It retains extended-protocol parameter type encoding,
+	// including JSON/JSONB; cache_statement is opt-in for stable connections.
 	parts := []string{
 		fmt.Sprintf("host=%s", conf.Host),
 		fmt.Sprintf("port=%s", conf.Port),
@@ -69,12 +82,33 @@ func DSN(conf *Config) (string, error) {
 		fmt.Sprintf("dbname=%s", conf.Database),
 		"sslmode=disable",
 		"TimeZone=UTC",
-		"default_query_exec_mode=simple_protocol",
+	}
+	if queryExecMode != "" {
+		parts = append(parts, "default_query_exec_mode="+queryExecMode)
 	}
 	if conf.SearchPath != "" {
 		parts = append(parts, fmt.Sprintf("search_path=%s", conf.SearchPath))
 	}
 	return strings.Join(parts, " "), nil
+}
+
+func normalizeQueryExecMode(mode string) (string, error) {
+	switch mode {
+	case "":
+		return "", nil
+	case QueryExecModeExec:
+		return QueryExecModeExec, nil
+	case QueryExecModeCacheStatement:
+		return QueryExecModeCacheStatement, nil
+	case QueryExecModeCacheDescribe:
+		return QueryExecModeCacheDescribe, nil
+	case QueryExecModeDescribeExec:
+		return QueryExecModeDescribeExec, nil
+	case QueryExecModeSimpleProtocol:
+		return QueryExecModeSimpleProtocol, nil
+	default:
+		return "", fmt.Errorf("unsupported PostgreSQL query execution mode %q", mode)
+	}
 }
 
 // NewPostgres opens a PostgreSQL-backed *sqlx.DB via the pgx stdlib driver.

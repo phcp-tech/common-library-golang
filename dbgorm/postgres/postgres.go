@@ -33,6 +33,9 @@ type Config struct {
 	Username   string
 	Password   string
 	SearchPath string
+	// QueryExecMode selects a pgx query execution mode. The zero value preserves
+	// pgx's default; see the QueryExecMode constants for mode-specific constraints.
+	QueryExecMode string
 
 	// gorm.Config fields for connection pool settings.
 	MaxOpenConns    int
@@ -42,10 +45,27 @@ type Config struct {
 	Logger          *slog.Logger
 }
 
+const (
+	// QueryExecModeExec uses the extended protocol without a prepared-statement cache.
+	QueryExecModeExec = "exec"
+	// QueryExecModeCacheStatement enables pgx's prepared-statement cache.
+	QueryExecModeCacheStatement = "cache_statement"
+	// QueryExecModeCacheDescribe caches parameter and result type descriptions.
+	QueryExecModeCacheDescribe = "cache_describe"
+	// QueryExecModeDescribeExec describes a statement before every execution.
+	QueryExecModeDescribeExec = "describe_exec"
+	// QueryExecModeSimpleProtocol uses pgx's simple query protocol.
+	QueryExecModeSimpleProtocol = "simple_protocol"
+)
+
 // Dialector returns a PostgreSQL GORM dialector from conf.
 func Dialector(conf *Config) (gorm.Dialector, error) {
 	if conf.Host == "" || conf.Port == "" || conf.Database == "" || conf.Username == "" {
 		return nil, dbgorm.ErrMissingConfig
+	}
+	queryExecMode, err := normalizeQueryExecMode(conf.QueryExecMode)
+	if err != nil {
+		return nil, err
 	}
 
 	// Another way for search_path: options='-c search_path=path1,path2'
@@ -61,26 +81,38 @@ func Dialector(conf *Config) (gorm.Dialector, error) {
 		"sslmode=disable",
 		"TimeZone=UTC",
 	}
+	if queryExecMode != "" {
+		parts = append(parts, "default_query_exec_mode="+queryExecMode)
+	}
 	if conf.SearchPath != "" {
 		parts = append(parts, fmt.Sprintf("search_path=%s", conf.SearchPath))
 	}
 	dsn := strings.Join(parts, " ")
-	// PreferSimpleProtocol sets pgx's DefaultQueryExecMode to
-	// QueryExecModeSimpleProtocol under the hood - see dbsqlx/postgres.DSN's
-	// identical default_query_exec_mode setting for the full rationale.
-	// Without it, pgx's default extended-protocol mode caches prepared
-	// statements per physical backend connection, which breaks under a
-	// PgBouncer/Supavisor transaction-mode pooler (e.g. Supabase's
-	// transaction pooler, port 6543): a later query can land on a different
-	// physical backend than an earlier one and fail with "prepared
-	// statement does not exist". Simple protocol works under both
-	// session-mode and transaction-mode pooling (and direct connections),
-	// so it's set unconditionally rather than gated behind another config
-	// flag.
+	// exec (the default) disables pgx's prepared-statement cache for
+	// transaction-mode poolers such as Supabase port 6543 while retaining
+	// extended-protocol parameter type encoding for JSON/JSONB and other values.
 	return gormpostgres.New(gormpostgres.Config{
-		DSN:                  dsn,
-		PreferSimpleProtocol: true,
+		DSN: dsn,
 	}), nil
+}
+
+func normalizeQueryExecMode(mode string) (string, error) {
+	switch mode {
+	case "":
+		return "", nil
+	case QueryExecModeExec:
+		return QueryExecModeExec, nil
+	case QueryExecModeCacheStatement:
+		return QueryExecModeCacheStatement, nil
+	case QueryExecModeCacheDescribe:
+		return QueryExecModeCacheDescribe, nil
+	case QueryExecModeDescribeExec:
+		return QueryExecModeDescribeExec, nil
+	case QueryExecModeSimpleProtocol:
+		return QueryExecModeSimpleProtocol, nil
+	default:
+		return "", fmt.Errorf("unsupported PostgreSQL query execution mode %q", mode)
+	}
 }
 
 // NewPostgres opens a PostgreSQL-backed GORM database.

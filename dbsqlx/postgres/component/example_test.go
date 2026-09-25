@@ -23,7 +23,7 @@ import (
 // ExampleComponent shows how Component() is used in a bootstrap registration chain.
 // It reads PostgreSQL connection parameters from env during Init():
 //
-//	db.host, db.port, db.name, db.schema, db.username, db.password
+//	db.host, db.port, db.name, db.schema, db.username, db.password, db.query.exec.mode
 //
 // Open verifies connectivity with an eager ping — if the database is
 // unreachable, Init() returns a non-nil error and bootstrap aborts startup.
