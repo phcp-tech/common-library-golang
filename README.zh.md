@@ -905,6 +905,10 @@ results := health.Check(c.Request.Context(), dbgorm.HealthChecker())
 服务器并执行 `SHOW search_path`** —— 当数据库不可达时，`InitDefault` 会立即
 返回非 nil 错误，导致 bootstrap 中止启动。
 支持可选的 `SearchPath` 以实现 schema 隔离。
+方言驱动会固定启用 GORM 的 `PreferSimpleProtocol`，避免 pgx 默认扩展协议缓存的
+预处理语句在 PgBouncer、Supavisor 等事务模式连接池中因后端连接切换而出现
+`prepared statement does not exist`。简单协议同样兼容会话模式连接池和直连
+PostgreSQL，调用方无需额外配置。
 默认实例是一个进程级的 `*gorm.DB`，通过 `dbgorm.Default()` /
 `dbgorm.SetDefault()` 共享。
 
@@ -1076,6 +1080,10 @@ results := health.Check(c.Request.Context(), mysql.HealthChecker())
 供 [sqlc](https://sqlc.dev/)（`sql_package: "pgx/v5"`）使用的 pgx/v5 连接池。
 连接池的创建是**惰性**的：`NewPostgres` 会立即返回而不建立任何
 连接，因此启动时不需要一个存活的服务器。
+`NewPostgres` 会固定将 `DefaultQueryExecMode` 设置为 `pgx.QueryExecModeSimpleProtocol`，
+避免 pgx 默认扩展协议缓存的预处理语句在 PgBouncer、Supavisor 等事务模式连接池中
+因后端连接切换而出现 `prepared statement does not exist`。简单协议同样兼容会话模式
+连接池和直连 PostgreSQL，调用方无需额外配置。
 通过 `InitDefault` / `Default` 实现单例模式。
 
 ```go
@@ -1345,6 +1353,10 @@ results := health.Check(c.Request.Context(), dbsqlx.HealthChecker())
 `dbsqlx.Open` 会**主动 ping 服务器并执行 `SHOW search_path`** ——
 当数据库不可达时，`InitDefault` 会立即返回非 nil 错误。
 支持可选的 `SearchPath` 以实现 schema 隔离。
+生成 DSN 时会固定加入 `default_query_exec_mode=simple_protocol`，避免 pgx 默认扩展协议
+缓存的预处理语句在 PgBouncer、Supavisor 等事务模式连接池中因后端连接切换而出现
+`prepared statement does not exist`。简单协议同样兼容会话模式连接池和直连 PostgreSQL，
+调用方无需额外配置。
 默认实例是一个进程级的 `*sqlx.DB`，通过 `dbsqlx.Default()` /
 `dbsqlx.SetDefault()` 共享。
 

@@ -909,6 +909,12 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 and runs `SHOW search_path` during `Open`** — `InitDefault` returns a non-nil error
 immediately when the database is unreachable, causing bootstrap to abort startup.
 Supports an optional `SearchPath` for schema isolation.
+The dialector always enables GORM's `PreferSimpleProtocol`, preventing pgx's
+extended-protocol prepared-statement cache from failing with
+`prepared statement does not exist` when PgBouncer, Supavisor, or another
+transaction-mode pooler switches physical backend connections. The simple protocol
+also works with session-mode pooling and direct PostgreSQL connections; callers do
+not need any additional configuration.
 The default instance is a process-wide `*gorm.DB` shared via `dbgorm.Default()` /
 `dbgorm.SetDefault()`.
 
@@ -1080,6 +1086,12 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 pgx/v5 connection pool for use with [sqlc](https://sqlc.dev/) (`sql_package: "pgx/v5"`).
 Pool creation is **lazy**: `NewPostgres` returns immediately without establishing any
 connections, so no live server is required at startup.
+`NewPostgres` always sets `DefaultQueryExecMode` to `pgx.QueryExecModeSimpleProtocol`,
+preventing pgx's extended-protocol prepared-statement cache from failing with
+`prepared statement does not exist` when PgBouncer, Supavisor, or another
+transaction-mode pooler switches physical backend connections. The simple protocol
+also works with session-mode pooling and direct PostgreSQL connections; callers do
+not need any additional configuration.
 Implements the singleton pattern via `InitDefault` / `Default`.
 
 ```go
@@ -1351,6 +1363,12 @@ via the `pgx/v5/stdlib` driver (registers as `"pgx"` with `database/sql`).
 `dbsqlx.Open` **pings the server and runs `SHOW search_path` eagerly** —
 `InitDefault` returns a non-nil error immediately when the database is unreachable.
 Supports an optional `SearchPath` for schema isolation.
+Generated DSNs always include `default_query_exec_mode=simple_protocol`, preventing
+pgx's extended-protocol prepared-statement cache from failing with
+`prepared statement does not exist` when PgBouncer, Supavisor, or another
+transaction-mode pooler switches physical backend connections. The simple protocol
+also works with session-mode pooling and direct PostgreSQL connections; callers do
+not need any additional configuration.
 The default instance is a process-wide `*sqlx.DB` shared via `dbsqlx.Default()` /
 `dbsqlx.SetDefault()`.
 
