@@ -17,6 +17,8 @@ package postgres_test
 
 import (
 	"fmt"
+	"strings"
+	"testing"
 
 	"github.com/phcp-tech/common-library-golang/dbsqlx/postgres"
 	"github.com/phcp-tech/common-library-golang/dto"
@@ -35,6 +37,73 @@ func ExampleNewPostgres() {
 	})
 	fmt.Println(err != nil) // true — server unreachable, Open pings eagerly
 	// Output:
+	// true
+}
+
+func TestDSNQueryExecMode(t *testing.T) {
+	base := postgres.Config{
+		Host:     "localhost",
+		Port:     "5432",
+		Database: "app",
+		Username: "user",
+		Password: "pass",
+	}
+
+	tests := []struct {
+		name    string
+		mode    string
+		want    string
+		wantErr bool
+	}{
+		{name: "pgx default"},
+		{name: "cache statement", mode: "cache_statement", want: "cache_statement"},
+		{name: "cache describe", mode: "cache_describe", want: "cache_describe"},
+		{name: "describe exec", mode: "describe_exec", want: "describe_exec"},
+		{name: "simple protocol", mode: "simple_protocol", want: "simple_protocol"},
+		{name: "invalid", mode: "invalid", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf := base
+			conf.QueryExecMode = tt.mode
+			dsn, err := postgres.DSN(&conf)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("DSN should reject the query execution mode")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DSN: %v", err)
+			}
+			if tt.want == "" {
+				if strings.Contains(dsn, "default_query_exec_mode=") {
+					t.Fatalf("DSN must preserve pgx default, got %q", dsn)
+				}
+				return
+			}
+			if !strings.Contains(dsn, "default_query_exec_mode="+tt.want) {
+				t.Fatalf("DSN = %q, want query mode %q", dsn, tt.want)
+			}
+		})
+	}
+}
+
+// ExampleDSN_queryExecMode shows how to select a non-default pgx execution mode.
+// See the package documentation before using a mode other than exec.
+func ExampleDSN_queryExecMode() {
+	dsn, err := postgres.DSN(&postgres.Config{
+		Host:          "localhost",
+		Port:          "5432",
+		Database:      "mydb",
+		Username:      "user",
+		Password:      "pass",
+		QueryExecMode: postgres.QueryExecModeCacheStatement,
+	})
+	fmt.Println(err)
+	fmt.Println(strings.Contains(dsn, "default_query_exec_mode=cache_statement"))
+	// Output:
+	// <nil>
 	// true
 }
 
@@ -67,7 +136,7 @@ func ExampleDSN() {
 	fmt.Println(dsn)
 	// Output:
 	// true
-	// host=localhost port=5432 user=user password=pass dbname=mydb sslmode=disable TimeZone=UTC default_query_exec_mode=simple_protocol search_path=myschema
+	// host=localhost port=5432 user=user password=pass dbname=mydb sslmode=disable TimeZone=UTC search_path=myschema
 }
 
 // ExampleZhSortSql shows how to build an ORDER BY clause that

@@ -23,22 +23,27 @@ import (
 	"github.com/phcp-tech/common-library-golang/env"
 )
 
+// postgresInitDefault is the InitDefault implementation used by loadFromEnv.
+// It is a package-level variable so that tests can replace it with a stub.
+var postgresInitDefault = postgres.InitDefault
+
 // loadFromEnv reads PostgreSQL connection parameters from the koanf env
 // singleton and initialises the package-level default connection pool.
 // Configuration keys:
 //
-//	db.host, db.port, db.name, db.schema, db.username, db.password
+//	db.host, db.port, db.name, db.schema, db.username, db.password, db.query.exec.mode
 //	db.max.open.conns, db.max.idle.conns
 //	db.conn.max.lifetime, db.conn.max.idletime
 func loadFromEnv() error {
 	config := &postgres.Config{
 		// Load database connection parameters from environment variables
-		Host:       env.Env().String("db.host"),
-		Port:       env.Env().String("db.port"),
-		Database:   env.Env().String("db.name"),
-		SearchPath: env.Env().String("db.schema"),
-		Username:   env.Env().String("db.username"),
-		Password:   env.Env().String("db.password"),
+		Host:          env.Env().String("db.host"),
+		Port:          env.Env().String("db.port"),
+		Database:      env.Env().String("db.name"),
+		SearchPath:    env.Env().String("db.schema"),
+		Username:      env.Env().String("db.username"),
+		Password:      env.Env().String("db.password"),
+		QueryExecMode: env.Env().String("db.query.exec.mode"),
 		// Load connection pool settings from environment variables, with defaults if not set
 		MaxOpenConns:    env.Env().Int("db.max.open.conns"),
 		MaxIdleConns:    env.Env().Int("db.max.idle.conns"),
@@ -46,7 +51,7 @@ func loadFromEnv() error {
 		ConnMaxIdletime: env.Env().Int("db.conn.max.idletime"),
 	}
 
-	if err := postgres.InitDefault(config); err != nil {
+	if err := postgresInitDefault(config); err != nil {
 		slog.Error("Connect database failed", "error", err)
 		return err
 	}

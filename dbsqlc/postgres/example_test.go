@@ -61,6 +61,24 @@ func ExampleNewPostgres_customPool() {
 	// true
 }
 
+// ExampleNewPostgres_queryExecMode shows how to explicitly select the pgx
+// statement cache for a stable session-pool or direct PostgreSQL connection.
+// Supabase transaction pooler connections on port 6543 must explicitly set
+// QueryExecModeExec instead.
+func ExampleNewPostgres_queryExecMode() {
+	_, err := postgres.NewPostgres(&postgres.Config{
+		Host:          "127.0.0.1",
+		Port:          "19999",
+		Database:      "mydb",
+		Username:      "user",
+		Password:      "pass",
+		QueryExecMode: postgres.QueryExecModeCacheStatement,
+	})
+	fmt.Println(err != nil) // true — connection is intentionally unreachable
+	// Output:
+	// true
+}
+
 // ExampleInitDefault shows the singleton pattern for the default PostgreSQL pool.
 // Call InitDefault once at application startup; subsequent calls are silently
 // ignored (sync.Once).

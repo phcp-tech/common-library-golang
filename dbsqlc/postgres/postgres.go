@@ -40,6 +40,9 @@ type Config struct {
 	SearchPath string // optional
 	Username   string
 	Password   string
+	// QueryExecMode selects a pgx query execution mode. The zero value preserves
+	// pgx's default; see the QueryExecMode constants for mode-specific constraints.
+	QueryExecMode string
 
 	// Connection pool parameters
 	MaxOpenConns    int
@@ -48,53 +51,25 @@ type Config struct {
 	ConnMaxIdletime int
 }
 
+const (
+	// QueryExecModeExec uses the extended protocol without a prepared-statement cache.
+	QueryExecModeExec = "exec"
+	// QueryExecModeCacheStatement enables pgx's prepared-statement cache.
+	QueryExecModeCacheStatement = "cache_statement"
+	// QueryExecModeCacheDescribe caches parameter and result type descriptions.
+	QueryExecModeCacheDescribe = "cache_describe"
+	// QueryExecModeDescribeExec describes a statement before every execution.
+	QueryExecModeDescribeExec = "describe_exec"
+	// QueryExecModeSimpleProtocol uses pgx's simple query protocol.
+	QueryExecModeSimpleProtocol = "simple_protocol"
+)
+
 // NewPostgres opens a *pgxpool.Pool connection to PostgreSQL and configures the connection pool.
 // It returns the pgx native pool so sqlc-generated Queries (sql_package: "pgx/v5") can use it directly.
 func NewPostgres(conf *Config) (*pgxpool.Pool, error) {
-	dsn := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable",
-		conf.Username, conf.Password, conf.Host, conf.Port, conf.Database)
-
-	poolConfig, err := pgxpool.ParseConfig(dsn)
+	poolConfig, err := newPoolConfig(conf)
 	if err != nil {
 		return nil, err
-	}
-
-	// If SearchPath is provided, set it as a runtime parameter for all connections in the pool.
-	if conf.SearchPath != "" {
-		poolConfig.ConnConfig.RuntimeParams["search_path"] = conf.SearchPath
-	}
-
-	// pgx's default extended-protocol mode caches prepared statements per
-	// physical backend connection - see dbsqlx/postgres.DSN's identical
-	// default_query_exec_mode setting for the full rationale. Under a
-	// PgBouncer/Supavisor transaction-mode pooler (e.g. Supabase's
-	// transaction pooler, port 6543), a later query can land on a different
-	// physical backend than an earlier one and fail with "prepared statement
-	// does not exist". Simple protocol sends the full SQL text every time
-	// instead of caching, which works under both session-mode and
-	// transaction-mode pooling (and direct connections) - set
-	// unconditionally so switching pooler modes later doesn't require
-	// remembering to also flip this setting.
-	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
-
-	// Set default values for connection pool settings
-	poolConfig.MaxConns = int32(dbsqlc.MaxOpenConns)
-	poolConfig.MinConns = int32(dbsqlc.MaxIdleConns)
-	poolConfig.MaxConnLifetime = dbsqlc.ConnMaxLifetime
-	poolConfig.MaxConnIdleTime = dbsqlc.ConnMaxIdletime
-
-	// Set connection pool settings from environment variables
-	if conf.MaxOpenConns > 0 {
-		poolConfig.MaxConns = int32(conf.MaxOpenConns)
-	}
-	if conf.MaxIdleConns > 0 {
-		poolConfig.MinConns = int32(conf.MaxIdleConns)
-	}
-	if conf.ConnMaxLifetime > 0 {
-		poolConfig.MaxConnLifetime = time.Duration(conf.ConnMaxLifetime) * time.Minute
-	}
-	if conf.ConnMaxIdletime > 0 {
-		poolConfig.MaxConnIdleTime = time.Duration(conf.ConnMaxIdletime) * time.Minute
 	}
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
@@ -119,4 +94,71 @@ func NewPostgres(conf *Config) (*pgxpool.Pool, error) {
 	slog.Info(fmt.Sprintf("Show search_path: %s", path))
 
 	return pool, nil
+}
+
+// newPoolConfig builds the native pgx pool configuration without opening a
+// connection. It is kept separate from NewPostgres so protocol settings can be
+// verified without requiring a live PostgreSQL server.
+func newPoolConfig(conf *Config) (*pgxpool.Config, error) {
+	queryExecMode, isConfigured, err := normalizeQueryExecMode(conf.QueryExecMode)
+	if err != nil {
+		return nil, err
+	}
+	dsn := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable",
+		conf.Username, conf.Password, conf.Host, conf.Port, conf.Database)
+
+	poolConfig, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// If SearchPath is provided, set it as a runtime parameter for all connections in the pool.
+	if conf.SearchPath != "" {
+		poolConfig.ConnConfig.RuntimeParams["search_path"] = conf.SearchPath
+	}
+
+	if isConfigured {
+		poolConfig.ConnConfig.DefaultQueryExecMode = queryExecMode
+	}
+
+	// Set default values for connection pool settings
+	poolConfig.MaxConns = int32(dbsqlc.MaxOpenConns)
+	poolConfig.MinConns = int32(dbsqlc.MaxIdleConns)
+	poolConfig.MaxConnLifetime = dbsqlc.ConnMaxLifetime
+	poolConfig.MaxConnIdleTime = dbsqlc.ConnMaxIdletime
+
+	// Set connection pool settings from environment variables
+	if conf.MaxOpenConns > 0 {
+		poolConfig.MaxConns = int32(conf.MaxOpenConns)
+	}
+	if conf.MaxIdleConns > 0 {
+		poolConfig.MinConns = int32(conf.MaxIdleConns)
+	}
+	if conf.ConnMaxLifetime > 0 {
+		poolConfig.MaxConnLifetime = time.Duration(conf.ConnMaxLifetime) * time.Minute
+	}
+	if conf.ConnMaxIdletime > 0 {
+		poolConfig.MaxConnIdleTime = time.Duration(conf.ConnMaxIdletime) * time.Minute
+	}
+
+	return poolConfig, nil
+}
+
+func normalizeQueryExecMode(mode string) (pgx.QueryExecMode, bool, error) {
+	switch mode {
+	case "":
+		return 0, false, nil
+	case QueryExecModeExec:
+		return pgx.QueryExecModeExec, true, nil
+	case QueryExecModeCacheStatement:
+		return pgx.QueryExecModeCacheStatement, true, nil
+	case QueryExecModeCacheDescribe:
+		return pgx.QueryExecModeCacheDescribe, true, nil
+	case QueryExecModeDescribeExec:
+		return pgx.QueryExecModeDescribeExec, true, nil
+	case QueryExecModeSimpleProtocol:
+		return pgx.QueryExecModeSimpleProtocol, true, nil
+	default:
+		return 0, false, fmt.Errorf("unsupported PostgreSQL query execution mode %q", mode)
+	}
 }

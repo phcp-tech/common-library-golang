@@ -85,6 +85,30 @@ func TestLoadFromEnv_Success(t *testing.T) {
 	}
 }
 
+// TestLoadFromEnv_QueryExecMode verifies that db.query.exec.mode is passed to
+// the PostgreSQL configuration. This lets applications opt into a mode that
+// is compatible with transaction poolers such as Supabase port 6543.
+func TestLoadFromEnv_QueryExecMode(t *testing.T) {
+	prev := postgresInitDefault
+	defer func() { postgresInitDefault = prev }()
+
+	var got *postgres.Config
+	postgresInitDefault = func(config *postgres.Config) error {
+		got = config
+		return nil
+	}
+
+	if err := loadFromEnv(); err != nil {
+		t.Fatalf("loadFromEnv() = %v, want nil", err)
+	}
+	if got == nil {
+		t.Fatal("postgresInitDefault was not called")
+	}
+	if got.QueryExecMode != postgres.QueryExecModeExec {
+		t.Errorf("QueryExecMode = %q, want %q", got.QueryExecMode, postgres.QueryExecModeExec)
+	}
+}
+
 // TestComponent_Close_WithLiveDB verifies the non-nil db path of Close()
 // by injecting a SQLite in-memory database as the process-wide default.
 // This covers the dbsqlx.Close(db) + slog.Info branches that are unreachable

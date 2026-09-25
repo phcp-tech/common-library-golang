@@ -16,10 +16,12 @@ package postgres_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	dbgorm "github.com/phcp-tech/common-library-golang/dbgorm"
 	"github.com/phcp-tech/common-library-golang/dbgorm/postgres"
+	gormpostgres "gorm.io/driver/postgres"
 )
 
 func TestDialectorFromStructuredFields(t *testing.T) {
@@ -36,6 +38,66 @@ func TestDialectorFromStructuredFields(t *testing.T) {
 	}
 	if dialector == nil {
 		t.Fatalf("expected dialector")
+	}
+
+	pgDialector, ok := dialector.(*gormpostgres.Dialector)
+	if !ok {
+		t.Fatalf("expected PostgreSQL dialector, got %T", dialector)
+	}
+	if pgDialector.PreferSimpleProtocol {
+		t.Fatal("Dialector must not enable simple protocol")
+	}
+	if strings.Contains(pgDialector.DSN, "default_query_exec_mode=") {
+		t.Fatalf("Dialector DSN must preserve pgx default, got %q", pgDialector.DSN)
+	}
+}
+
+func TestDialectorQueryExecMode(t *testing.T) {
+	base := postgres.Config{
+		Host:     "localhost",
+		Port:     "5432",
+		Database: "risk",
+		Username: "risk",
+		Password: "secret",
+	}
+	tests := []struct {
+		name    string
+		mode    string
+		want    string
+		wantErr bool
+	}{
+		{name: "pgx default"},
+		{name: "cache statement", mode: "cache_statement", want: "cache_statement"},
+		{name: "cache describe", mode: "cache_describe", want: "cache_describe"},
+		{name: "describe exec", mode: "describe_exec", want: "describe_exec"},
+		{name: "simple protocol", mode: "simple_protocol", want: "simple_protocol"},
+		{name: "invalid", mode: "invalid", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf := base
+			conf.QueryExecMode = tt.mode
+			dialector, err := postgres.Dialector(&conf)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Dialector should reject the query execution mode")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Dialector: %v", err)
+			}
+			pgDialector := dialector.(*gormpostgres.Dialector)
+			if tt.want == "" {
+				if strings.Contains(pgDialector.DSN, "default_query_exec_mode=") {
+					t.Fatalf("DSN must preserve pgx default, got %q", pgDialector.DSN)
+				}
+				return
+			}
+			if !strings.Contains(pgDialector.DSN, "default_query_exec_mode="+tt.want) {
+				t.Fatalf("DSN = %q, want query mode %q", pgDialector.DSN, tt.want)
+			}
+		})
 	}
 }
 

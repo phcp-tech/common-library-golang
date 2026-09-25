@@ -86,6 +86,29 @@ func TestLoadFromEnv_Success(t *testing.T) {
 	}
 }
 
+// TestLoadFromEnv_QueryExecMode verifies that db.query.exec.mode is passed to
+// the PostgreSQL configuration.
+func TestLoadFromEnv_QueryExecMode(t *testing.T) {
+	previous := postgresInitDefault
+	defer func() { postgresInitDefault = previous }()
+
+	var got *postgres.Config
+	postgresInitDefault = func(config *postgres.Config) error {
+		got = config
+		return nil
+	}
+
+	if err := loadFromEnv(); err != nil {
+		t.Fatalf("loadFromEnv() = %v, want nil", err)
+	}
+	if got == nil {
+		t.Fatal("postgresInitDefault was not called")
+	}
+	if got.QueryExecMode != postgres.QueryExecModeExec {
+		t.Errorf("QueryExecMode = %q, want %q", got.QueryExecMode, postgres.QueryExecModeExec)
+	}
+}
+
 // TestComponent_Close_WithLiveDB verifies the non-nil db path of Close()
 // by injecting a SQLite in-memory database as the process-wide default.
 // This covers the dbgorm.Close(db) + slog.Info branches that are unreachable
