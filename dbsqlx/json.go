@@ -103,12 +103,14 @@ func (j *JSONRaw) Scan(src any) error {
 	}
 }
 
-// Value implements driver.Valuer. A zero-length JSONRaw becomes SQL NULL
+// Value implements driver.Valuer. A non-empty value is returned as JSON text
+// rather than []byte, so pgx does not infer it as a bytea parameter.
+// A zero-length JSONRaw becomes SQL NULL
 // rather than an empty string — see the type doc comment for why this
 // matters: an empty string is not valid input for a json/jsonb column.
 func (j JSONRaw) Value() (driver.Value, error) {
 	if len(j) == 0 {
 		return nil, nil
 	}
-	return []byte(j), nil
+	return string(j), nil
 }
