@@ -19,8 +19,6 @@ import "time"
 const (
 	// defaultPoolSize is the default number of socket connections per node.
 	defaultPoolSize = 100
-	// defaultMinIdleConns is the default minimum number of idle connections to maintain.
-	defaultMinIdleConns = 5
 
 	// defaultScanCount is the default page size used by SCAN in GetKeysCount.
 	defaultScanCount = 1000
@@ -31,23 +29,25 @@ const (
 // Config holds connection and pool settings for a Redis client.
 // The caller is responsible for reading values from env (or any other source)
 // at the composition root so this package has no dependency on env.
-// Zero-value int fields fall back to the package defaults above.
 type Config struct {
 	Clusters     []string // Redis node addresses; more than one address enables cluster mode
 	DB           int      // database index (ignored in cluster mode)
 	Password     string   // authentication password
-	PoolSize     int      // max socket connections per node; default: 100
-	MinIdleConns int      // minimum idle connections to maintain; default: 5
+	PoolSize     int      // max socket connections per node; zero falls back to default: 100
+	MinIdleConns int      // minimum idle connections to maintain; zero is used as-is (go-redis's own native "no forced minimum" behavior) — there is no way to request the old default via this field
 }
 
-// resolve returns a copy of cfg with zero-value int fields replaced by defaults.
-// resolve returns a copy of cfg with zero-value int fields replaced by defaults.
+// resolve returns a copy of cfg with a zero PoolSize replaced by the package
+// default. MinIdleConns is passed through unchanged: zero is a legitimate,
+// meaningful value (no eagerly pre-warmed idle connections — see
+// NewRedisClient's ConnPool, which dials MinIdleConns connections up front),
+// not a "use the default" sentinel, so callers that want 0 idle connections
+// (e.g. one goroutine-per-invocation environments like AWS Lambda, where an
+// eagerly-warmed pool is pure per-container connection overhead) can actually
+// get it.
 func (c Config) resolve() Config {
 	if c.PoolSize == 0 {
 		c.PoolSize = defaultPoolSize
-	}
-	if c.MinIdleConns == 0 {
-		c.MinIdleConns = defaultMinIdleConns
 	}
 	return c
 }

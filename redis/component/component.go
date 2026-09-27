@@ -28,14 +28,18 @@ import (
 // and initialises the package-level default Redis client.
 // Configuration keys:
 //
-//	redis.clusters  — comma-separated node addresses
-//	redis.database  — database index (ignored in cluster mode)
-//	redis.password  — authentication password
+//	redis.clusters       — comma-separated node addresses
+//	redis.database       — database index (ignored in cluster mode)
+//	redis.password       — authentication password
+//	redis.pool.size      — max socket connections per node (0 falls back to redis.Config's default)
+//	redis.min.idle.conns — minimum idle connections to maintain (0 falls back to redis.Config's default)
 func loadFromEnv() error {
 	redisCfg := &redis.Config{
-		Clusters: strings.Split(env.Env().String("redis.clusters"), ","),
-		DB:       env.Env().Int("redis.database"),
-		Password: env.Env().String("redis.password"),
+		Clusters:     strings.Split(env.Env().String("redis.clusters"), ","),
+		DB:           env.Env().Int("redis.database"),
+		Password:     env.Env().String("redis.password"),
+		PoolSize:     env.Env().Int("redis.pool.size"),
+		MinIdleConns: env.Env().Int("redis.min.idle.conns"),
 	}
 
 	if err := redis.InitDefault(redisCfg); err != nil {
