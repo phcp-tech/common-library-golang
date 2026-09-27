@@ -51,9 +51,9 @@ func ExampleNewRedisClient_cluster() {
 	defer cli.Close()
 }
 
-// ExampleNewRedisClient_customPool shows how to override the default connection
-// pool settings. Zero-value fields fall back to package defaults
-// (PoolSize=100, MinIdleConns=5).
+// ExampleNewRedisClient_customPool shows how to override the default
+// connection pool settings. A zero PoolSize falls back to the package
+// default (100); MinIdleConns has no default substitution — zero means zero.
 func ExampleNewRedisClient_customPool() {
 	cli := redis.NewRedisClient(&redis.Config{
 		Clusters:     []string{"127.0.0.1:6379"},

@@ -84,10 +84,10 @@ func TestConfig_Resolve_CustomPoolSize(t *testing.T) {
 	}
 }
 
-func TestConfig_Resolve_DefaultMinIdleConns(t *testing.T) {
+func TestConfig_Resolve_ZeroMinIdleConnsStaysZero(t *testing.T) {
 	c := Config{}.resolve()
-	if c.MinIdleConns != defaultMinIdleConns {
-		t.Errorf("default MinIdleConns: want %d, got %d", defaultMinIdleConns, c.MinIdleConns)
+	if c.MinIdleConns != 0 {
+		t.Errorf("zero MinIdleConns: want 0 (no default substitution), got %d", c.MinIdleConns)
 	}
 }
 
