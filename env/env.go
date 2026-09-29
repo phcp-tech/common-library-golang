@@ -62,8 +62,8 @@ func InitEnv(configFile string, configFS ...*embed.FS) error {
 		}
 
 		// only print variables read from file, don't print variables read from environment
-		fmt.Println("Application read environment variables:")
-		k.Print()
+		fmt.Println("Application read environment variables.")
+		//k.Print()
 
 		// Read log level from environment, then merge into config file variables.
 		prefix := "TM_"
