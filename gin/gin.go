@@ -80,9 +80,14 @@ func InitGin(corsOrigins []string, filters ...slogGin.Filter) *gin.Engine {
 	// ReleaseMode suppresses framework route-registration logs in all environments.
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	//TODO: set real IP, not available
-	//router.SetTrustedProxies(nil)
-	//router.TrustedPlatform = "X-Forwarded-For"
+	// Getting the real client IP under AWS Lambda is NOT a TrustedProxies/
+	// TrustedPlatform configuration problem - Context.RemoteIP() fails
+	// before either setting is ever consulted, because
+	// aws-lambda-go-api-proxy hands Gin a bare IP with no port in
+	// RemoteAddr and net.SplitHostPort requires "host:port". The actual
+	// fix lives in httpserver/lambda.withHostPortRemoteAddr, which
+	// normalizes RemoteAddr before any handler (Gin included) ever sees
+	// the request - see that function's doc comment for the full incident.
 
 	//2. Add the slogGin middleware to all routes.
 	// The middleware will log all requests attributes under a "http" group.
