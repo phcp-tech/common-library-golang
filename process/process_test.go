@@ -15,6 +15,7 @@
 package process
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,23 +54,18 @@ func TestGetProcessInfoCpuPercent(t *testing.T) {
 	Convey("Test CpuPercent follows the CPU usage of the latest sample window", t, func() {
 		GetProcessInfo() // start the sampler and set the base point
 
-		stop := make(chan struct{})
+		var stop atomic.Bool
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
+			for !stop.Load() { // busy loop on purpose: it keeps one core at 100%
 			}
 		}()
 
 		// wait for more than one window, so at least one full window is sampled while the goroutine is busy
 		time.Sleep(cpuSampleInterval + 1500*time.Millisecond)
 		busy := GetProcessInfo().CpuPercent
-		close(stop)
+		stop.Store(true)
 		<-done
 
 		// one busy goroutine is about 100%. Use a low threshold, because a shared CI machine may give less CPU.
