@@ -17,28 +17,29 @@
 
 package cgroup
 
-// CPURequestMilli returns the cgroup CPU request in millicores.
-// On macOS cgroup information is not available; it always returns 0, nil.
+// CPURequestMilli gets CPU request - macOS fallback implementation
 func CPURequestMilli() (int, error) {
 	// On macOS, return 0
 	return 0, nil
 }
 
-// CPULimitMilli returns the cgroup CPU limit in millicores.
-// On macOS cgroup information is not available; it always returns 0, nil.
+// CPULimitMilli gets CPU limits - macOS fallback implementation
 func CPULimitMilli() (int, error) {
 	// On macOS, return 0
 	return 0, nil
 }
 
-// MemoryLimitBytes returns the cgroup memory limit in bytes.
-// On macOS cgroup information is not available; it always returns 0, nil.
+// MemoryLimitBytes gets memory limit - macOS fallback implementation
 func MemoryLimitBytes() (int64, error) {
 	return 0, nil
 }
 
-// MemoryRequestBytes returns the cgroup memory request (soft limit) in bytes.
-// On macOS cgroup information is not available; it always returns 0, nil.
+// MemoryRequestBytes gets memory request - macOS fallback implementation
 func MemoryRequestBytes() (int64, error) {
 	return 0, nil
+}
+
+// CPUThrottleStat gets CPU throttle counters - macOS fallback implementation
+func CPUThrottleStat() (CPUThrottle, error) {
+	return CPUThrottle{}, nil
 }

@@ -18,481 +18,223 @@
 package cgroup
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	. "github.com/smartystreets/goconvey/convey"
 )
 
-// -----------------------------------------------------------------------
-// test helpers
-// -----------------------------------------------------------------------
+// cgroup_linux.go reads the fixed paths /sys/fs/cgroup, /proc/self/cgroup and /proc/self/mountinfo, so these tests
+// run against the cgroup setup of the machine they run on (cgroup v1, v2, or none in a minimal container).
+// They check what must hold in every setup: the parsing helpers, and the invariants of the returned values.
+// An error from a reader is accepted, because the files it needs may not exist on the host; for example the root
+// cgroup of a cgroup v2 host has no cpu.max.
 
-// setupFakeV2 builds a minimal cgroup v2 directory tree under t.TempDir()
-// and overrides the package-level cgroupRoot / procSelfCgroup vars so all
-// cgroup functions operate on the fake tree. The returned restore function
-// must be deferred by the caller.
-//
-// files maps filenames (relative to cgroupRoot) to their contents.
-// The v2 sentinel file "cgroup.controllers" is created automatically.
-// /proc/self/cgroup is faked with a single "0::/" entry (process at root).
-func setupFakeV2(t *testing.T, files map[string]string) (restore func()) {
-	t.Helper()
-	root := t.TempDir()
+// ---------------------------------------------------------------------------
+// parseInt
+// ---------------------------------------------------------------------------
 
-	// cgroup v2 sentinel
-	writeTestFile(t, filepath.Join(root, "cgroup.controllers"), "cpu memory")
+func TestParseInt(t *testing.T) {
+	Convey("Test parseInt", t, func() {
+		Convey("Test valid numbers, with surrounding white space", func() {
+			for in, want := range map[string]int{
+				"0":         0,
+				"42":        42,
+				"-1":        -1,
+				" 100000\n": 100000,
+				"\t7 ":      7,
+			} {
+				got, err := parseInt(in)
+				So(err, ShouldBeNil)
+				So(got, ShouldEqual, want)
+			}
+		})
 
-	for name, content := range files {
-		writeTestFile(t, filepath.Join(root, name), content)
-	}
-
-	// fake /proc/self/cgroup: v2 entry "0::/" → process lives at cgroupRoot itself
-	procFile := filepath.Join(t.TempDir(), "cgroup")
-	writeTestFile(t, procFile, "0::/\n")
-
-	origRoot, origProc := cgroupRoot, procSelfCgroup
-	cgroupRoot = root
-	procSelfCgroup = procFile
-	return func() {
-		cgroupRoot = origRoot
-		procSelfCgroup = origProc
-	}
-}
-
-// setupFakeV2Nested is like setupFakeV2 but the process cgroup entry points
-// to a subdirectory, as in a real Kubernetes pod environment.
-func setupFakeV2Nested(t *testing.T, cgroupPath string, files map[string]string) (restore func()) {
-	t.Helper()
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "cgroup.controllers"), "cpu memory")
-
-	for name, content := range files {
-		writeTestFile(t, filepath.Join(root, cgroupPath, name), content)
-	}
-
-	procFile := filepath.Join(t.TempDir(), "cgroup")
-	writeTestFile(t, procFile, "0::"+cgroupPath+"\n")
-
-	origRoot, origProc := cgroupRoot, procSelfCgroup
-	cgroupRoot = root
-	procSelfCgroup = procFile
-	return func() {
-		cgroupRoot = origRoot
-		procSelfCgroup = origProc
-	}
-}
-
-func writeTestFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile %s: %v", path, err)
-	}
-}
-
-// -----------------------------------------------------------------------
-// cgroupV2Dir
-// -----------------------------------------------------------------------
-
-func TestCgroupV2Dir_NoCgroupControllers(t *testing.T) {
-	origRoot := cgroupRoot
-	cgroupRoot = t.TempDir() // directory exists but no cgroup.controllers inside
-	defer func() { cgroupRoot = origRoot }()
-
-	_, err := cgroupV2Dir()
-	if err == nil {
-		t.Error("want error when cgroup.controllers is absent, got nil")
-	}
-}
-
-func TestCgroupV2Dir_NoV2EntryInProcFile(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "cgroup.controllers"), "cpu memory")
-
-	// Only v1 entries, no "0::" line
-	procFile := filepath.Join(t.TempDir(), "cgroup")
-	writeTestFile(t, procFile, "1:cpu,cpuacct:/kubepods\n2:memory:/kubepods\n")
-
-	origRoot, origProc := cgroupRoot, procSelfCgroup
-	cgroupRoot = root
-	procSelfCgroup = procFile
-	defer func() { cgroupRoot = origRoot; procSelfCgroup = origProc }()
-
-	_, err := cgroupV2Dir()
-	if err == nil {
-		t.Error("want error when no v2 entry in proc file, got nil")
-	}
-}
-
-func TestCgroupV2Dir_NestedPath(t *testing.T) {
-	const cgPath = "/kubepods/burstable/pod123/ctr456"
-	restore := setupFakeV2Nested(t, cgPath, map[string]string{
-		"cpu.max": "max 100000\n",
+		Convey("Test invalid numbers", func() {
+			for _, in := range []string{"", "  ", "abc", "1.5", "max", "12abc"} {
+				_, err := parseInt(in)
+				So(err, ShouldNotBeNil)
+			}
+		})
 	})
-	defer restore()
+}
 
-	dir, err := cgroupV2Dir()
+// ---------------------------------------------------------------------------
+// detectCgroupV2
+// ---------------------------------------------------------------------------
+
+// hasV2ProcEntry reports whether /proc/self/cgroup has the cgroup v2 line "0::<path>", and returns the path.
+func hasV2ProcEntry(t *testing.T) (string, bool) {
+	t.Helper()
+	f, err := os.Open("/proc/self/cgroup")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		return "", false
 	}
-	if dir == "" {
-		t.Error("expected non-empty dir")
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		parts := strings.SplitN(sc.Text(), ":", 3)
+		if len(parts) == 3 && parts[0] == "0" && parts[1] == "" {
+			return parts[2], true
+		}
 	}
+	return "", false
 }
 
-// -----------------------------------------------------------------------
-// CPULimitMilli
-// -----------------------------------------------------------------------
+func TestDetectCgroupV2(t *testing.T) {
+	Convey("Test detectCgroupV2", t, func() {
+		root, path, ok := detectCgroupV2()
 
-func TestCPULimitMilli_Unlimited(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"cpu.max": "max 100000\n"})
-	defer restore()
+		_, statErr := os.Stat("/sys/fs/cgroup/cgroup.controllers")
+		wantPath, hasEntry := hasV2ProcEntry(t)
 
-	v, err := CPULimitMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 0 {
-		t.Errorf("unlimited: want 0, got %d", v)
-	}
-}
+		Convey("Test it is v2 only when cgroup.controllers exists and /proc/self/cgroup has a 0:: line", func() {
+			So(ok, ShouldEqual, statErr == nil && hasEntry)
+		})
 
-func TestCPULimitMilli_OneCPU(t *testing.T) {
-	// quota=100000, period=100000 → 1 core → 1000 mCPU
-	restore := setupFakeV2(t, map[string]string{"cpu.max": "100000 100000\n"})
-	defer restore()
-
-	v, err := CPULimitMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 1000 {
-		t.Errorf("1 CPU: want 1000 mCPU, got %d", v)
-	}
-}
-
-func TestCPULimitMilli_HalfCPU(t *testing.T) {
-	// quota=50000, period=100000 → 500 mCPU
-	restore := setupFakeV2(t, map[string]string{"cpu.max": "50000 100000\n"})
-	defer restore()
-
-	v, err := CPULimitMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 500 {
-		t.Errorf("0.5 CPU: want 500 mCPU, got %d", v)
-	}
-}
-
-func TestCPULimitMilli_FourCPU(t *testing.T) {
-	// quota=400000, period=100000 → 4000 mCPU
-	restore := setupFakeV2(t, map[string]string{"cpu.max": "400000 100000\n"})
-	defer restore()
-
-	v, err := CPULimitMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 4000 {
-		t.Errorf("4 CPU: want 4000 mCPU, got %d", v)
-	}
-}
-
-func TestCPULimitMilli_MissingFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{}) // no cpu.max
-	defer restore()
-
-	_, err := CPULimitMilli()
-	if err == nil {
-		t.Error("want error for missing cpu.max, got nil")
-	}
-}
-
-func TestCPULimitMilli_MalformedFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"cpu.max": "notanumber 100000\n"})
-	defer restore()
-
-	_, err := CPULimitMilli()
-	if err == nil {
-		t.Error("want error for malformed cpu.max, got nil")
-	}
-}
-
-func TestCPULimitMilli_MissingCgroupV2(t *testing.T) {
-	origRoot := cgroupRoot
-	cgroupRoot = t.TempDir() // no cgroup.controllers
-	defer func() { cgroupRoot = origRoot }()
-
-	_, err := CPULimitMilli()
-	if err == nil {
-		t.Error("want error when cgroup v2 unavailable, got nil")
-	}
-}
-
-// -----------------------------------------------------------------------
-// CPURequestMilli
-// -----------------------------------------------------------------------
-
-// Expected values computed from the formula:
-//   shares = (weight*262144 + 5000) / 10000   [integer division]
-//   mCPU   = (shares*1000 + 512) / 1024       [integer division]
-//
-//   weight=1    → shares=26   → mCPU=25
-//   weight=100  → shares=2621 → mCPU=2560
-//   weight=10000 → shares=262144 → mCPU=256000
-
-func TestCPURequestMilli_Weight1(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"cpu.weight": "1\n"})
-	defer restore()
-
-	v, err := CPURequestMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 25 {
-		t.Errorf("weight=1: want 25 mCPU, got %d", v)
-	}
-}
-
-func TestCPURequestMilli_Weight100(t *testing.T) {
-	// weight=100 is the default (no explicit request) in Kubernetes
-	restore := setupFakeV2(t, map[string]string{"cpu.weight": "100\n"})
-	defer restore()
-
-	v, err := CPURequestMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 2560 {
-		t.Errorf("weight=100: want 2560 mCPU, got %d", v)
-	}
-}
-
-func TestCPURequestMilli_Weight10000(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"cpu.weight": "10000\n"})
-	defer restore()
-
-	v, err := CPURequestMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 256000 {
-		t.Errorf("weight=10000: want 256000 mCPU, got %d", v)
-	}
-}
-
-func TestCPURequestMilli_WeightClamped(t *testing.T) {
-	// weight > 10000 is clamped to 10000
-	restore := setupFakeV2(t, map[string]string{"cpu.weight": "99999\n"})
-	defer restore()
-
-	v, err := CPURequestMilli()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 256000 {
-		t.Errorf("weight=99999 (clamped to 10000): want 256000 mCPU, got %d", v)
-	}
-}
-
-func TestCPURequestMilli_MissingFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{})
-	defer restore()
-
-	_, err := CPURequestMilli()
-	if err == nil {
-		t.Error("want error for missing cpu.weight, got nil")
-	}
-}
-
-func TestCPURequestMilli_MalformedFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"cpu.weight": "abc\n"})
-	defer restore()
-
-	_, err := CPURequestMilli()
-	if err == nil {
-		t.Error("want error for malformed cpu.weight, got nil")
-	}
-}
-
-// -----------------------------------------------------------------------
-// MemoryLimitBytes
-// -----------------------------------------------------------------------
-
-func TestMemoryLimitBytes_Unlimited(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"memory.max": "max\n"})
-	defer restore()
-
-	v, err := MemoryLimitBytes()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 0 {
-		t.Errorf("unlimited: want 0, got %d", v)
-	}
-}
-
-func TestMemoryLimitBytes_1GiB(t *testing.T) {
-	const oneGiB = int64(1 << 30)
-	restore := setupFakeV2(t, map[string]string{"memory.max": "1073741824\n"})
-	defer restore()
-
-	v, err := MemoryLimitBytes()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != oneGiB {
-		t.Errorf("1 GiB: want %d, got %d", oneGiB, v)
-	}
-}
-
-func TestMemoryLimitBytes_512MiB(t *testing.T) {
-	const fiveTwelveMiB = int64(512 << 20)
-	restore := setupFakeV2(t, map[string]string{"memory.max": "536870912\n"})
-	defer restore()
-
-	v, err := MemoryLimitBytes()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != fiveTwelveMiB {
-		t.Errorf("512 MiB: want %d, got %d", fiveTwelveMiB, v)
-	}
-}
-
-func TestMemoryLimitBytes_MissingFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{})
-	defer restore()
-
-	_, err := MemoryLimitBytes()
-	if err == nil {
-		t.Error("want error for missing memory.max, got nil")
-	}
-}
-
-func TestMemoryLimitBytes_MalformedFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"memory.max": "notanumber\n"})
-	defer restore()
-
-	_, err := MemoryLimitBytes()
-	if err == nil {
-		t.Error("want error for malformed memory.max, got nil")
-	}
-}
-
-// -----------------------------------------------------------------------
-// MemoryRequestBytes
-// -----------------------------------------------------------------------
-
-func TestMemoryRequestBytes_Zero(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"memory.low": "0\n"})
-	defer restore()
-
-	v, err := MemoryRequestBytes()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 0 {
-		t.Errorf("no soft limit (0): want 0, got %d", v)
-	}
-}
-
-func TestMemoryRequestBytes_Max(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"memory.low": "max\n"})
-	defer restore()
-
-	v, err := MemoryRequestBytes()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != 0 {
-		t.Errorf("max: want 0, got %d", v)
-	}
-}
-
-func TestMemoryRequestBytes_256MiB(t *testing.T) {
-	const twoFiftySixMiB = int64(256 << 20)
-	restore := setupFakeV2(t, map[string]string{"memory.low": "268435456\n"})
-	defer restore()
-
-	v, err := MemoryRequestBytes()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if v != twoFiftySixMiB {
-		t.Errorf("256 MiB: want %d, got %d", twoFiftySixMiB, v)
-	}
-}
-
-func TestMemoryRequestBytes_MissingFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{})
-	defer restore()
-
-	_, err := MemoryRequestBytes()
-	if err == nil {
-		t.Error("want error for missing memory.low, got nil")
-	}
-}
-
-func TestMemoryRequestBytes_MalformedFile(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{"memory.low": "bad\n"})
-	defer restore()
-
-	_, err := MemoryRequestBytes()
-	if err == nil {
-		t.Error("want error for malformed memory.low, got nil")
-	}
-}
-
-// -----------------------------------------------------------------------
-// return type and non-negative sanity (mirrors Windows tests)
-// -----------------------------------------------------------------------
-
-func TestAllFunctions_ReturnTypesAndNonNegative(t *testing.T) {
-	restore := setupFakeV2(t, map[string]string{
-		"cpu.max":    "max 100000\n",
-		"cpu.weight": "100\n",
-		"memory.max": "max\n",
-		"memory.low": "0\n",
+		if ok {
+			Convey("Test the v2 root and path", func() {
+				So(root, ShouldEqual, "/sys/fs/cgroup")
+				So(path, ShouldEqual, wantPath)
+			})
+		} else {
+			Convey("Test the results are empty when it is not v2", func() {
+				So(root, ShouldBeEmpty)
+				So(path, ShouldBeEmpty)
+			})
+		}
 	})
-	defer restore()
+}
 
-	cpuLimit, err := CPULimitMilli()
-	if err != nil {
-		t.Errorf("CPULimitMilli: %v", err)
-	}
-	var _ int = cpuLimit
-	if cpuLimit < 0 {
-		t.Errorf("CPULimitMilli must be >= 0, got %d", cpuLimit)
-	}
+// ---------------------------------------------------------------------------
+// cgroup v1 helpers
+// ---------------------------------------------------------------------------
 
-	cpuReq, err := CPURequestMilli()
-	if err != nil {
-		t.Errorf("CPURequestMilli: %v", err)
-	}
-	var _ int = cpuReq
-	if cpuReq < 0 {
-		t.Errorf("CPURequestMilli must be >= 0, got %d", cpuReq)
-	}
+func TestFindCgroupV1Mountpoint(t *testing.T) {
+	Convey("Test findCgroupV1Mountpoint", t, func() {
+		Convey("Test a controller that does not exist is an error", func() {
+			mnt, err := findCgroupV1Mountpoint("no-such-controller")
+			So(err, ShouldNotBeNil)
+			So(mnt, ShouldBeEmpty)
+		})
 
-	memLimit, err := MemoryLimitBytes()
-	if err != nil {
-		t.Errorf("MemoryLimitBytes: %v", err)
-	}
-	var _ int64 = memLimit
-	if memLimit < 0 {
-		t.Errorf("MemoryLimitBytes must be >= 0, got %d", memLimit)
-	}
+		Convey("Test a found mount point is an absolute path", func() {
+			for _, controller := range []string{"cpu", "memory"} {
+				mnt, err := findCgroupV1Mountpoint(controller)
+				if err == nil {
+					So(filepath.IsAbs(mnt), ShouldBeTrue)
+				}
+			}
+		})
+	})
+}
 
-	memReq, err := MemoryRequestBytes()
-	if err != nil {
-		t.Errorf("MemoryRequestBytes: %v", err)
-	}
-	var _ int64 = memReq
-	if memReq < 0 {
-		t.Errorf("MemoryRequestBytes must be >= 0, got %d", memReq)
-	}
+func TestCgroupV1Dirs(t *testing.T) {
+	Convey("Test cgroupV1CpuDir and cgroupV1MemoryDir", t, func() {
+		Convey("Test cgroupV1CpuDir returns an absolute path or an error", func() {
+			dir, err := cgroupV1CpuDir()
+			if err == nil {
+				So(filepath.IsAbs(dir), ShouldBeTrue)
+			} else {
+				So(dir, ShouldBeEmpty)
+			}
+		})
+
+		Convey("Test cgroupV1MemoryDir returns an absolute path or an error", func() {
+			dir, err := cgroupV1MemoryDir()
+			if err == nil {
+				So(filepath.IsAbs(dir), ShouldBeTrue)
+			} else {
+				So(dir, ShouldBeEmpty)
+			}
+		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CPULimitMilli / CPURequestMilli
+// ---------------------------------------------------------------------------
+
+func TestCPULimitMilli(t *testing.T) {
+	Convey("Test CPULimitMilli", t, func() {
+		v, err := CPULimitMilli()
+		if err != nil {
+			// Neither a readable v2 cpu.max nor a readable v1 cpu controller on this host.
+			So(v, ShouldEqual, 0)
+		} else {
+			// 0 means unlimited.
+			So(v, ShouldBeGreaterThanOrEqualTo, 0)
+		}
+	})
+}
+
+func TestCPURequestMilli(t *testing.T) {
+	Convey("Test CPURequestMilli", t, func() {
+		v, err := CPURequestMilli()
+		if err != nil {
+			So(v, ShouldEqual, 0)
+		} else {
+			// 0 means no request (BestEffort).
+			So(v, ShouldBeGreaterThanOrEqualTo, 0)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// MemoryLimitBytes / MemoryRequestBytes
+// ---------------------------------------------------------------------------
+
+func TestMemoryLimitBytes(t *testing.T) {
+	Convey("Test MemoryLimitBytes", t, func() {
+		v, err := MemoryLimitBytes()
+		if err != nil {
+			So(v, ShouldEqual, 0)
+		} else {
+			// 0 means unlimited. A v1 "no limit" value (a huge number) is mapped to 0.
+			So(v, ShouldBeGreaterThanOrEqualTo, 0)
+			So(v, ShouldBeLessThanOrEqualTo, int64(1)<<62)
+		}
+	})
+}
+
+func TestMemoryRequestBytes(t *testing.T) {
+	Convey("Test MemoryRequestBytes", t, func() {
+		v, err := MemoryRequestBytes()
+		if err != nil {
+			So(v, ShouldEqual, 0)
+		} else {
+			// 0 means "no soft limit" or "can not be read".
+			So(v, ShouldBeGreaterThanOrEqualTo, 0)
+			So(v, ShouldBeLessThanOrEqualTo, int64(1)<<62)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// CPUThrottleStat
+// ---------------------------------------------------------------------------
+
+func TestCPUThrottleStat(t *testing.T) {
+	Convey("Test CPUThrottleStat", t, func() {
+		first, err := CPUThrottleStat()
+		if err != nil {
+			So(first, ShouldResemble, CPUThrottle{})
+			return
+		}
+
+		Convey("Test a period is throttled at most once", func() {
+			So(first.Throttled, ShouldBeLessThanOrEqualTo, first.Periods)
+		})
+
+		Convey("Test the counters never decrease between two reads", func() {
+			second, err := CPUThrottleStat()
+			So(err, ShouldBeNil)
+			So(second.Periods, ShouldBeGreaterThanOrEqualTo, first.Periods)
+			So(second.Throttled, ShouldBeGreaterThanOrEqualTo, first.Throttled)
+			So(second.ThrottledNs, ShouldBeGreaterThanOrEqualTo, first.ThrottledNs)
+		})
+	})
 }

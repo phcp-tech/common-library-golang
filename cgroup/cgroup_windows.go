@@ -17,28 +17,29 @@
 
 package cgroup
 
-// CPURequestMilli returns the cgroup CPU request in millicores.
-// On Windows cgroup information is not available; it always returns 0, nil.
+// CPURequestMilli gets CPU request - Windows fallback implementation
 func CPURequestMilli() (int, error) {
 	// On Windows, return 0
 	return 0, nil
 }
 
-// CPULimitMilli returns the cgroup CPU limit in millicores.
-// On Windows cgroup information is not available; it always returns 0, nil.
+// CPULimitMilli gets CPU limits - Windows fallback implementation
 func CPULimitMilli() (int, error) {
 	// On Windows, return 0
 	return 0, nil
 }
 
-// MemoryLimitBytes returns the cgroup memory limit in bytes.
-// On Windows cgroup information is not available; it always returns 0, nil.
+// On Windows, return 0
 func MemoryLimitBytes() (int64, error) {
 	return 0, nil
 }
 
-// MemoryRequestBytes returns the cgroup memory request (soft limit) in bytes.
-// On Windows cgroup information is not available; it always returns 0, nil.
+// On Windows, return 0
 func MemoryRequestBytes() (int64, error) {
 	return 0, nil
+}
+
+// CPUThrottleStat gets CPU throttle counters - Windows fallback implementation
+func CPUThrottleStat() (CPUThrottle, error) {
+	return CPUThrottle{}, nil
 }

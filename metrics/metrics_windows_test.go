@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-// cgroup is unavailable on Windows; all four cgroup metrics must be "0"
+// cgroup is unavailable on Windows; all three cgroup metrics must be "0"
 
 // TestGetMetricsCpuRequestIsZeroOnWindows verifies that on Windows the cpuRequest
 // cgroup metric is always "0" (cgroup not available).
@@ -46,19 +46,6 @@ func TestGetMetricsCpuLimitIsZeroOnWindows(t *testing.T) {
 	}
 	if val != "0" {
 		t.Errorf("cpuLimit on Windows: expected \"0\", got %q", val)
-	}
-}
-
-// TestGetMetricsMemoryRequestIsZeroOnWindows verifies that on Windows the
-// memoryRequest cgroup metric is always "0".
-func TestGetMetricsMemoryRequestIsZeroOnWindows(t *testing.T) {
-	result := GetMetrics()
-	val, found := findMetric(result, "memoryRequest")
-	if !found {
-		t.Fatal("GetMetrics() missing memoryRequest")
-	}
-	if val != "0" {
-		t.Errorf("memoryRequest on Windows: expected \"0\", got %q", val)
 	}
 }
 

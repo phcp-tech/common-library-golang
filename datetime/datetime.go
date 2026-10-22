@@ -17,6 +17,7 @@ package datetime
 import (
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -98,13 +99,37 @@ const MTSEVER_TIME_OFFSET = 25200 // 7(hours)*3600 seconds
 // /usr/share/zoneinfo/zoneinfo/America/New_York in MacOS,
 // Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Time Zones in Windows
 
+// nyLocation caches the New York time zone.
+var nyLocation atomic.Pointer[time.Location]
+
+// getNewYorkLocation returns the cached New York time zone, and loads it on the first call.
+//
+// time.LoadLocation reads and parses the zoneinfo file at every call. It was called in every UTCToMTServerTime call
+// (every monitor, every quote alert timer cycle in TMT). The PROD allocs profile showed about 15 allocations per
+// call and 20 GB cumulative (0.046% of all allocated bytes). The time zone data does not change while the process
+// runs, so it is loaded once.
+//
+// A failure is NOT cached: the next call tries to load again, so a temporary problem does not break the process
+// for its whole life. Two goroutines may load at the same time on the first call, and that is harmless.
+func getNewYorkLocation() (*time.Location, error) {
+	if loc := nyLocation.Load(); loc != nil {
+		return loc, nil
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to load New York timezone")
+	}
+	nyLocation.Store(loc)
+	return loc, nil
+}
+
 // UTCToMTServerTime converts UTC time to MTServerTime
 // UTC --> UTC time + 2/3*3600(2/3*3600 = 7*3600 - New York timezone offset) -> MTServerTime
 // EST: UTC-5, New York timezone offset = -18000s; EDT: UTC-4, New York timezone offset = -14400s
 func UTCToMTServerTime(utcTime int64) (int64, error) {
-	nyTZ, err := time.LoadLocation("America/New_York")
+	nyTZ, err := getNewYorkLocation()
 	if err != nil {
-		return 0, errors.Wrap(err, "failed to load New York timezone")
+		return 0, err
 	}
 
 	_, nyOffset := time.Unix(utcTime, 0).In(nyTZ).Zone()
@@ -115,9 +140,9 @@ func UTCToMTServerTime(utcTime int64) (int64, error) {
 // MTServerTime --> MTServerTime - 2/3*3600(2/3*3600 = 7*3600 - New York timezone offset) --> UTC
 // EST: UTC-5, New York timezone offset = -18000s; EDT: UTC-4, New York timezone offset = -14400s
 func MTServerTimeToUTC(mtServerTime int64) (int64, error) {
-	nyTZ, err := time.LoadLocation("America/New_York")
+	nyTZ, err := getNewYorkLocation()
 	if err != nil {
-		return 0, errors.Wrap(err, "failed to load New York timezone")
+		return 0, err
 	}
 
 	_, nyOffset := time.Unix(mtServerTime, 0).In(nyTZ).Zone()

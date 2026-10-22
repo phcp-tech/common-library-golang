@@ -514,18 +514,27 @@ Benchmarks run with `go test -bench=. -benchtime=2s -benchmem`.
 ## cgroup — Linux Resource Limits
 
 Reads CPU and memory resource limits from the **cgroup v2** unified hierarchy
-(`/sys/fs/cgroup`). Intended for containerised workloads (Kubernetes, Docker)
-where the process runs inside a cgroup with configured CPU and memory constraints.
+(`/sys/fs/cgroup`), and falls back to **cgroup v1** when v2 is not available or
+the v2 file can not be read. Intended for containerised workloads (Kubernetes,
+Docker) where the process runs inside a cgroup with configured CPU and memory
+constraints.
 
-On **non-Linux platforms** (macOS, Windows) all functions return `(0, nil)` — no
-cgroup filesystem is available and no error is raised.
+On **non-Linux platforms** (macOS, Windows) all functions return zero values and
+a `nil` error — no cgroup filesystem is available and no error is raised.
 
-| Function | cgroup v2 file | Returns |
+| Function | cgroup v2 file (v1 fallback) | Returns |
 |----------|---------------|---------|
-| `CPULimitMilli()` | `cpu.max` | CPU limit in millicores; 0 = unlimited |
-| `CPURequestMilli()` | `cpu.weight` | CPU request in millicores via weight→shares→mCPU |
-| `MemoryLimitBytes()` | `memory.max` | Memory limit in bytes; 0 = unlimited |
-| `MemoryRequestBytes()` | `memory.low` | Memory soft limit in bytes; 0 = not set |
+| `CPULimitMilli()` | `cpu.max` (`cpu.cfs_quota_us`, `cpu.cfs_period_us`) | CPU limit in millicores; 0 = unlimited |
+| `CPURequestMilli()` | `cpu.weight` (`cpu.shares`) | CPU request in millicores; 0 = no request (BestEffort) |
+| `MemoryLimitBytes()` | `memory.max` (`memory.limit_in_bytes`) | Memory limit in bytes; 0 = unlimited |
+| `MemoryRequestBytes()` | `memory.low` (`memory.soft_limit_in_bytes`) | Memory soft limit in bytes; see the note below |
+| `CPUThrottleStat()` | `cpu.stat` | Cumulative CPU throttle counters (`CPUThrottle`: `Periods`, `Throttled`, `ThrottledNs`); take the difference of two reads |
+
+> **Note on `MemoryRequestBytes()`:** Kubernetes does not write the memory request
+> into the cgroup (`memory.min` and `memory.low` are 0 unless MemoryQoS is on), so
+> `0` does **not** mean "no request is set" — it means the request can not be read.
+> Do not use this value to decide whether a request exists. For this reason
+> `metrics.GetMetrics()` no longer outputs `memoryRequest`.
 
 ```go
 import "github.com/phcp-tech/common-library-golang/cgroup"
@@ -565,10 +574,11 @@ intended for periodic polling (e.g. every 10–30 s), not hot-path use.
 | `goroutines` | Live goroutine count |
 | `gomaxprocs` | `runtime.GOMAXPROCS(0)` |
 | `numCPU` | `runtime.NumCPU()` |
-| `cpuRequest` | cgroup v2 CPU request in millicores (0 if not set or non-Linux) |
-| `cpuLimit` | cgroup v2 CPU limit in millicores (0 if unlimited or non-Linux) |
-| `memoryRequest` | cgroup v2 memory soft limit in bytes (0 if not set or non-Linux) |
-| `memoryLimit` | cgroup v2 memory limit in bytes (0 if unlimited or non-Linux) |
+| `cpuThrottledPercent` | Percent of CFS periods in the latest 5 s in which the cgroup was throttled by its CPU limit (0 = not throttled; always 0 without a limit or on non-Linux) |
+| `cpuThrottledMillis` | Time in milliseconds the cgroup was throttled in the latest 5 s (0 without a limit or on non-Linux) |
+| `cpuRequest` | cgroup CPU request in millicores (0 if not set or non-Linux) |
+| `cpuLimit` | cgroup CPU limit in millicores (0 if unlimited or non-Linux) |
+| `memoryLimit` | cgroup memory limit in bytes (0 if unlimited or non-Linux) |
 | `age` | Process uptime formatted as `Xd Xh Xm Xs` |
 
 ```go
@@ -909,12 +919,26 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 and runs `SHOW search_path` during `Open`** — `InitDefault` returns a non-nil error
 immediately when the database is unreachable, causing bootstrap to abort startup.
 Supports an optional `SearchPath` for schema isolation.
-The dialector always enables GORM's `PreferSimpleProtocol`, preventing pgx's
-extended-protocol prepared-statement cache from failing with
-`prepared statement does not exist` when PgBouncer, Supavisor, or another
-transaction-mode pooler switches physical backend connections. The simple protocol
-also works with session-mode pooling and direct PostgreSQL connections; callers do
-not need any additional configuration.
+When `Config.QueryExecMode` is empty, the dialector does not override pgx's default
+(`cache_statement` in the currently used pgx version). The adapter never infers a
+mode from a port. Applications using PgBouncer, Supavisor, or another transaction-mode
+pooler must explicitly select `exec` to avoid `prepared statement does not exist`
+when physical backend connections change. `exec` retains PostgreSQL's extended
+protocol and parameter type encoding, including JSON/JSONB.
+
+| Constant | Use and constraint |
+| --- | --- |
+| `QueryExecModeExec` | Explicitly required for Supabase transaction pooler 6543 and other transaction poolers. |
+| `QueryExecModeCacheStatement` | Prepared-statement cache for stable session-pool or direct PostgreSQL connections after a production-like benchmark. |
+| `QueryExecModeCacheDescribe` | Caches parameter/result descriptions; requires the same stable backend and schema assumptions as cached statements. |
+| `QueryExecModeDescribeExec` | Gets a description for every query; uses two round trips and is unsuitable for transaction poolers that can switch the backend between them. |
+| `QueryExecModeSimpleProtocol` | Compatibility fallback for a proxy or server without extended-protocol support; `[]byte` is encoded as `bytea`, so JSON/JSONB values require special care. |
+
+For Supabase 6543, applications must set:
+
+```go
+QueryExecMode: postgres.QueryExecModeExec,
+```
 The default instance is a process-wide `*gorm.DB` shared via `dbgorm.Default()` /
 `dbgorm.SetDefault()`.
 
@@ -1086,12 +1110,14 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 pgx/v5 connection pool for use with [sqlc](https://sqlc.dev/) (`sql_package: "pgx/v5"`).
 Pool creation is **lazy**: `NewPostgres` returns immediately without establishing any
 connections, so no live server is required at startup.
-`NewPostgres` always sets `DefaultQueryExecMode` to `pgx.QueryExecModeSimpleProtocol`,
-preventing pgx's extended-protocol prepared-statement cache from failing with
-`prepared statement does not exist` when PgBouncer, Supavisor, or another
-transaction-mode pooler switches physical backend connections. The simple protocol
-also works with session-mode pooling and direct PostgreSQL connections; callers do
-not need any additional configuration.
+When `Config.QueryExecMode` is empty, `NewPostgres` preserves pgx's default
+`DefaultQueryExecMode` (`cache_statement` in the currently used pgx version). It
+never infers a mode from a port. Applications using Supabase 6543 must explicitly
+set `QueryExecModeExec`; use `QueryExecModeCacheStatement` or
+`QueryExecModeCacheDescribe` only with a stable session-pool or direct PostgreSQL
+connection, avoid `QueryExecModeDescribeExec` on transaction poolers, and use
+`QueryExecModeSimpleProtocol` only as a compatibility fallback because `[]byte`
+values are encoded as `bytea`.
 Implements the singleton pattern via `InitDefault` / `Default`.
 
 ```go
@@ -1363,12 +1389,14 @@ via the `pgx/v5/stdlib` driver (registers as `"pgx"` with `database/sql`).
 `dbsqlx.Open` **pings the server and runs `SHOW search_path` eagerly** —
 `InitDefault` returns a non-nil error immediately when the database is unreachable.
 Supports an optional `SearchPath` for schema isolation.
-Generated DSNs always include `default_query_exec_mode=simple_protocol`, preventing
-pgx's extended-protocol prepared-statement cache from failing with
-`prepared statement does not exist` when PgBouncer, Supavisor, or another
-transaction-mode pooler switches physical backend connections. The simple protocol
-also works with session-mode pooling and direct PostgreSQL connections; callers do
-not need any additional configuration.
+Generated DSNs omit `default_query_exec_mode` when `Config.QueryExecMode` is empty,
+preserving pgx's default (`cache_statement` in the currently used pgx version). The
+adapter never infers a mode from a port. Applications using Supabase 6543 must
+explicitly set `QueryExecModeExec`; use `QueryExecModeCacheStatement` or
+`QueryExecModeCacheDescribe` only with a stable session-pool or direct PostgreSQL
+connection, avoid `QueryExecModeDescribeExec` on transaction poolers, and use
+`QueryExecModeSimpleProtocol` only as a compatibility fallback because `[]byte`
+values are encoded as `bytea`.
 The default instance is a process-wide `*sqlx.DB` shared via `dbsqlx.Default()` /
 `dbsqlx.SetDefault()`.
 

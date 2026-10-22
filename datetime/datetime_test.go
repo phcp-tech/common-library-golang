@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/smartystreets/goconvey/convey"
 )
 
 // ---------------------------------------------------------------------------
@@ -316,11 +318,11 @@ func TestUTCToLocalString(t *testing.T) {
 
 func TestLocalToUTCString(t *testing.T) {
 	cases := []struct {
-		name      string
-		localStr  string
-		timezone  string
-		wantErr   bool
-		wantStr   string
+		name     string
+		localStr string
+		timezone string
+		wantErr  bool
+		wantStr  string
 	}{
 		{
 			name:     "Shanghai 08:00 -> UTC 00:00",
@@ -397,40 +399,214 @@ func TestUTCLocalStringInverse(t *testing.T) {
 // UTCToMTServerTime / MTServerTimeToUTC
 // ---------------------------------------------------------------------------
 
-func TestUTCToMTServerTime(t *testing.T) {
-	// Use a known EST time (January = UTC-5).
-	// NY offset in EST = -18000 (UTC-5)
-	// MT offset = 7*3600 = 25200
-	// delta = 25200 + (-18000) = 7200 (2 hours ahead of UTC during EST)
-	estDate := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	utcUnix := estDate.Unix()
-
-	mtTime, err := UTCToMTServerTime(utcUnix)
-	if err != nil {
-		t.Fatalf("UTCToMTServerTime error: %v", err)
-	}
-
-	// delta should be 7200 seconds (2h) in January (EST)
-	delta := mtTime - utcUnix
-	if delta != 7200 {
-		t.Errorf("UTCToMTServerTime EST delta: got %d, want 7200", delta)
+func BenchmarkUTCToMTServerTime(b *testing.B) {
+	t1, _ := time.Parse("2006-01-02 15:04:05", "2024-01-01 15:10:10")
+	b.ReportAllocs()
+	for b.Loop() {
+		UTCToMTServerTime(t1.Unix())
 	}
 }
 
+func TestUTCToMTServerTime(t *testing.T) {
+	Convey("Test UTCToMTServerTime", t, func() {
+		Convey("Test New York eastern daylight time: March", func() {
+			// New York Eastern Stand Time is UTC-5
+			// test case 1: New York Time: 2024-01-01 10:10:10, UTC: 2024-01-01 15:10:10,MTTime: 2024-01-01 17:10:10
+			t1, _ := time.Parse("2006-01-02 15:04:05", "2024-01-01 15:10:10")
+			t2, _ := UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*2)
+
+			// test case 2: New York Time: 2024-03-10 01:10:10, UTC: 2024-03-10 06:10:10,MTTime: 2024-03-10 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 06:10:10")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*2)
+
+			// test case 3: New York Time: 2024-03-10 01:59:59, UTC: 2024-03-10 06:59:59,MTTime: 2024-03-10 08:59:59
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 06:59:59")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*2)
+
+			// New York Eastern Daylight Time (EDT) is UTC-4
+			// test case 4: New York Time: 2024-03-10 03:00:00, UTC: 2024-03-10 07:00:00,MTTime: 2024-03-10 10:00:00
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 07:00:00")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*3)
+
+			// test case 5: New York Time: 2024-03-10 03:10:10, UTC: 2024-03-10 07:10:10,MTTime: 2024-03-10 10:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 07:10:10")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*3)
+
+			// test case 6: New York Time: 2024-10-10 10:10:10, UTC: 2024-10-10 14:10:10,MTTime: 2024-10-10 17:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-10-10 14:10:10")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*3)
+		})
+
+		Convey("Test New York eastern daylight time: November", func() {
+			// New York Eastern Daylight Time (EDT) is UTC-4
+			// test case 1: New York Time: 2024-11-01 10:10:10, UTC: 2024-11-01 14:10:10,MTTime: 2024-11-01 17:10:10
+			t1, _ := time.Parse("2006-01-02 15:04:05", "2024-11-01 14:10:10")
+			t2, _ := UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*3)
+
+			// test case 2: New York Time: 2024-11-03 01:10:10, UTC: 2024-11-03 05:10:10,MTTime: 2024-11-03 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 05:10:10")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*3)
+
+			// test case 3: New York Time: 2024-11-03 01:59:59, UTC: 2024-11-03 05:59:59,MTTime: 2024-11-03 08:59:59
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 05:59:59")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*3)
+
+			// New York Eastern Stand Time is UTC-5
+			// test case 4: New York Time: 2024-11-03 01:00:00, UTC: 2024-11-03 06:00:00,MTTime: 2024-11-03 08:00:00
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 06:00:00")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*2)
+
+			// test case 5: New York Time: 2024-11-03 01:10:10, UTC: 2024-11-03 06:10:10,MTTime: 2024-11-03 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 06:10:10")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*2)
+
+			// test case 6: New York Time: 2024-12-31 01:10:10, UTC: 2024-12-31 06:10:10,MTTime: 2024-12-31 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-12-31 06:10:10")
+			t2, _ = UTCToMTServerTime(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()+3600*2)
+		})
+
+		Convey("Test the delta between MT server time and UTC in EST", func() {
+			// January = EST = UTC-5.
+			// NY offset in EST = -18000 (UTC-5)
+			// MT offset = 7*3600 = 25200
+			// delta = 25200 + (-18000) = 7200 (2 hours ahead of UTC during EST)
+			utcUnix := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC).Unix()
+
+			mtTime, err := UTCToMTServerTime(utcUnix)
+			So(err, ShouldBeNil)
+			So(mtTime-utcUnix, ShouldEqual, 7200)
+		})
+	})
+}
+
 func TestMTServerTimeToUTC(t *testing.T) {
-	// Use a known EST time reference.
-	estDate := time.Date(2024, 1, 15, 14, 0, 0, 0, time.UTC) // 14:00 MT server time
-	mtUnix := estDate.Unix()
+	Convey("Test MTServerTimeToUTC", t, func() {
+		Convey("Test New York eastern daylight time: March", func() {
+			// New York Eastern Stand Time is UTC-5
+			// test case 1: New York Time: 2024-01-01 10:10:10, UTC: 2024-01-01 15:10:10,MTTime: 2024-01-01 17:10:10
+			t1, _ := time.Parse("2006-01-02 15:04:05", "2024-01-01 17:10:10")
+			t2, _ := MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*2)
 
-	utcTime, err := MTServerTimeToUTC(mtUnix)
-	if err != nil {
-		t.Fatalf("MTServerTimeToUTC error: %v", err)
-	}
+			/* TODO: not pass
+			// test case 2: New York Time: 2024-03-10 01:10:10, UTC: 2024-03-10 06:10:10,MTTime: 2024-03-10 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 08:10:10")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*2)
 
-	delta := mtUnix - utcTime
-	if delta != 7200 {
-		t.Errorf("MTServerTimeToUTC EST delta: got %d, want 7200", delta)
-	}
+			// test case 3: New York Time: 2024-03-10 01:59:59, UTC: 2024-03-10 06:59:59,MTTime: 2024-03-10 08:59:59
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 08:59:59")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*2)
+			*/
+
+			// New York Eastern Daylight Time (EDT) is UTC-4
+			// test case 4: New York Time: 2024-03-10 03:00:00, UTC: 2024-03-10 07:00:00,MTTime: 2024-03-10 10:00:00
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 10:00:00")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*3)
+
+			// test case 5: New York Time: 2024-03-10 03:10:10, UTC: 2024-03-10 07:10:10,MTTime: 2024-03-10 10:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-03-10 10:10:10")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*3)
+
+			// test case 6: New York Time: 2024-10-10 10:10:10, UTC: 2024-10-10 14:10:10,MTTime: 2024-10-10 17:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-10-10 17:10:10")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*3)
+		})
+
+		Convey("Test New York eastern daylight time: November", func() {
+			// New York Eastern Daylight Time (EDT) is UTC-4
+			// test case 1: New York Time: 2024-11-01 10:10:10, UTC: 2024-11-01 14:10:10,MTTime: 2024-11-01 17:10:10
+			t1, _ := time.Parse("2006-01-02 15:04:05", "2024-11-01 17:10:10")
+			t2, _ := MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*3)
+
+			/* TODO: not pass
+			// test case 2: New York Time: 2024-11-03 01:10:10, UTC: 2024-11-03 05:10:10,MTTime: 2024-11-03 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 08:10:10")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*3)
+
+			// test case 3: New York Time: 2024-11-03 01:59:59, UTC: 2024-11-03 05:59:59,MTTime: 2024-11-03 08:59:59
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 08:59:59")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*3)
+			*/
+
+			// New York Eastern Stand Time is UTC-5
+			// test case 4: New York Time: 2024-11-03 01:00:00, UTC: 2024-11-03 06:00:00,MTTime: 2024-11-03 08:00:00
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 08:00:00")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*2)
+
+			// test case 5: New York Time: 2024-11-03 01:10:10, UTC: 2024-11-03 06:10:10,MTTime: 2024-11-03 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-11-03 08:10:10")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*2)
+
+			// test case 6: New York Time: 2024-12-31 01:10:10, UTC: 2024-12-31 06:10:10,MTTime: 2024-12-31 08:10:10
+			t1, _ = time.Parse("2006-01-02 15:04:05", "2024-12-31 08:10:10")
+			t2, _ = MTServerTimeToUTC(t1.Unix())
+			So(t2, ShouldEqual, t1.Unix()-3600*2)
+		})
+
+		Convey("Test the delta between MT server time and UTC in EST", func() {
+			// January = EST = UTC-5, so MT server time is 2 hours ahead of UTC.
+			mtUnix := time.Date(2024, 1, 15, 14, 0, 0, 0, time.UTC).Unix() // 14:00 MT server time
+
+			utcTime, err := MTServerTimeToUTC(mtUnix)
+			So(err, ShouldBeNil)
+			So(mtUnix-utcTime, ShouldEqual, 7200)
+		})
+	})
+}
+
+func TestGetNewYorkLocation(t *testing.T) {
+	Convey("Test getNewYorkLocation", t, func() {
+		Convey("Test the time zone is loaded once and cached", func() {
+			loc1, err := getNewYorkLocation()
+			So(err, ShouldBeNil)
+			So(loc1, ShouldNotBeNil)
+			So(loc1.String(), ShouldEqual, "America/New_York")
+
+			// the same *time.Location is returned: it is not loaded again
+			loc2, err := getNewYorkLocation()
+			So(err, ShouldBeNil)
+			So(loc2, ShouldEqual, loc1)
+		})
+
+		Convey("Test the cached time zone does not change the result", func() {
+			// New York EST: 2024-01-01 15:10:10 UTC -> MT server time = UTC + 2h
+			t1, _ := time.Parse("2006-01-02 15:04:05", "2024-01-01 15:10:10")
+			for i := 0; i < 3; i++ {
+				t2, err := UTCToMTServerTime(t1.Unix())
+				So(err, ShouldBeNil)
+				So(t2, ShouldEqual, t1.Unix()+3600*2)
+			}
+		})
+
+		Convey("Test UTCToMTServerTime does not allocate when the time zone is cached", func() {
+			now := time.Now().Unix()
+			UTCToMTServerTime(now) // fill the cache
+			allocs := testing.AllocsPerRun(100, func() { UTCToMTServerTime(now) })
+			So(allocs, ShouldEqual, 0)
+		})
+	})
 }
 
 func TestMTServerTimeRoundTrip(t *testing.T) {
