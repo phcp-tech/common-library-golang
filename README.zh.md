@@ -509,19 +509,26 @@ _ = c.Clear()
 
 ## cgroup — Linux 资源限制
 
-从 **cgroup v2** 统一层级结构（`/sys/fs/cgroup`）读取 CPU 和内存资源限制。
+从 **cgroup v2** 统一层级结构（`/sys/fs/cgroup`）读取 CPU 和内存资源限制；
+当 v2 不可用或 v2 文件读取失败时，回退到 **cgroup v1**。
 面向容器化工作负载（Kubernetes、Docker）设计，即进程运行在配置了 CPU 和内存约束的
 cgroup 之中。
 
-在**非 Linux 平台**（macOS、Windows）上，所有函数都返回 `(0, nil)` —— 没有可用的
+在**非 Linux 平台**（macOS、Windows）上，所有函数都返回零值和 `nil` 错误 —— 没有可用的
 cgroup 文件系统，也不会产生错误。
 
-| 函数 | cgroup v2 文件 | 返回值 |
+| 函数 | cgroup v2 文件（v1 回退） | 返回值 |
 |----------|---------------|---------|
-| `CPULimitMilli()` | `cpu.max` | 以毫核为单位的 CPU 限制；0 表示不限制 |
-| `CPURequestMilli()` | `cpu.weight` | 通过 weight→shares→mCPU 换算得到的、以毫核为单位的 CPU 请求量 |
-| `MemoryLimitBytes()` | `memory.max` | 以字节为单位的内存限制；0 表示不限制 |
-| `MemoryRequestBytes()` | `memory.low` | 以字节为单位的内存软限制；0 表示未设置 |
+| `CPULimitMilli()` | `cpu.max`（`cpu.cfs_quota_us`、`cpu.cfs_period_us`） | 以毫核为单位的 CPU 限制；0 表示不限制 |
+| `CPURequestMilli()` | `cpu.weight`（`cpu.shares`） | 以毫核为单位的 CPU 请求量；0 表示没有请求（BestEffort） |
+| `MemoryLimitBytes()` | `memory.max`（`memory.limit_in_bytes`） | 以字节为单位的内存限制；0 表示不限制 |
+| `MemoryRequestBytes()` | `memory.low`（`memory.soft_limit_in_bytes`） | 以字节为单位的内存软限制；见下方说明 |
+| `CPUThrottleStat()` | `cpu.stat` | 累计的 CPU 节流计数（`CPUThrottle`：`Periods`、`Throttled`、`ThrottledNs`）；使用时取两次读数的差值 |
+
+> **关于 `MemoryRequestBytes()` 的说明：** Kubernetes 不会把内存 request 写入 cgroup
+> （除非开启 MemoryQoS，否则 `memory.min` 和 `memory.low` 都是 0），所以返回 `0`
+> **不表示**"没有设置 request"，而表示"无法获取"。不要用这个值判断 request 是否存在。
+> 因此 `metrics.GetMetrics()` 不再输出 `memoryRequest`。
 
 ```go
 import "github.com/phcp-tech/common-library-golang/cgroup"
@@ -561,10 +568,11 @@ if limitBytes, err := cgroup.MemoryLimitBytes(); err == nil && limitBytes > 0 {
 | `goroutines` | 存活的 goroutine 数量 |
 | `gomaxprocs` | `runtime.GOMAXPROCS(0)` |
 | `numCPU` | `runtime.NumCPU()` |
-| `cpuRequest` | cgroup v2 的 CPU 请求量，单位毫核（未设置或非 Linux 时为 0） |
-| `cpuLimit` | cgroup v2 的 CPU 限制，单位毫核（不限制或非 Linux 时为 0） |
-| `memoryRequest` | cgroup v2 的内存软限制，单位字节（未设置或非 Linux 时为 0） |
-| `memoryLimit` | cgroup v2 的内存限制，单位字节（不限制或非 Linux 时为 0） |
+| `cpuThrottledPercent` | 最近 5 秒内，cgroup 因 CPU 限制被节流的 CFS 周期占比（%）；0 表示未被节流（没有限制或非 Linux 时始终为 0） |
+| `cpuThrottledMillis` | 最近 5 秒内，cgroup 被节流的总时间，单位毫秒（没有限制或非 Linux 时为 0） |
+| `cpuRequest` | cgroup 的 CPU 请求量，单位毫核（未设置或非 Linux 时为 0） |
+| `cpuLimit` | cgroup 的 CPU 限制，单位毫核（不限制或非 Linux 时为 0） |
+| `memoryLimit` | cgroup 的内存限制，单位字节（不限制或非 Linux 时为 0） |
 | `age` | 以 `Xd Xh Xm Xs` 格式表示的进程运行时长 |
 
 ```go
@@ -905,10 +913,25 @@ results := health.Check(c.Request.Context(), dbgorm.HealthChecker())
 服务器并执行 `SHOW search_path`** —— 当数据库不可达时，`InitDefault` 会立即
 返回非 nil 错误，导致 bootstrap 中止启动。
 支持可选的 `SearchPath` 以实现 schema 隔离。
-方言驱动会固定启用 GORM 的 `PreferSimpleProtocol`，避免 pgx 默认扩展协议缓存的
-预处理语句在 PgBouncer、Supavisor 等事务模式连接池中因后端连接切换而出现
-`prepared statement does not exist`。简单协议同样兼容会话模式连接池和直连
-PostgreSQL，调用方无需额外配置。
+当 `Config.QueryExecMode` 为空时，方言驱动不覆盖 pgx 默认值（当前使用的 pgx 版本为
+`cache_statement`）。适配器不会根据端口自动推断模式。使用 PgBouncer、Supavisor 等
+事务模式连接池的应用必须显式选择 `exec`，以避免后端连接切换后出现
+`prepared statement does not exist`。`exec` 保留 PostgreSQL 扩展协议及参数类型编码，
+包括 JSON/JSONB。
+
+| 常量 | 适用场景与限制 |
+| --- | --- |
+| `QueryExecModeExec` | Supabase transaction pooler 6543 及其他事务模式连接池必须显式使用。 |
+| `QueryExecModeCacheStatement` | 缓存预处理语句；仅在生产相近压测证明收益的稳定会话连接池或直连 PostgreSQL 中使用。 |
+| `QueryExecModeCacheDescribe` | 缓存参数和结果类型描述；与缓存语句相同，要求后端连接与 schema 保持稳定。 |
+| `QueryExecModeDescribeExec` | 每次查询先获取描述；需要两次往返，事务连接池可能在两次之间切换后端，因此不适用。 |
+| `QueryExecModeSimpleProtocol` | 不支持扩展协议的代理或服务端的兼容兜底；`[]byte` 会编码为 `bytea`，JSON/JSONB 需特别处理。 |
+
+Supabase 6543 的应用必须设置：
+
+```go
+QueryExecMode: postgres.QueryExecModeExec,
+```
 默认实例是一个进程级的 `*gorm.DB`，通过 `dbgorm.Default()` /
 `dbgorm.SetDefault()` 共享。
 
@@ -1080,10 +1103,12 @@ results := health.Check(c.Request.Context(), mysql.HealthChecker())
 供 [sqlc](https://sqlc.dev/)（`sql_package: "pgx/v5"`）使用的 pgx/v5 连接池。
 连接池的创建是**惰性**的：`NewPostgres` 会立即返回而不建立任何
 连接，因此启动时不需要一个存活的服务器。
-`NewPostgres` 会固定将 `DefaultQueryExecMode` 设置为 `pgx.QueryExecModeSimpleProtocol`，
-避免 pgx 默认扩展协议缓存的预处理语句在 PgBouncer、Supavisor 等事务模式连接池中
-因后端连接切换而出现 `prepared statement does not exist`。简单协议同样兼容会话模式
-连接池和直连 PostgreSQL，调用方无需额外配置。
+当 `Config.QueryExecMode` 为空时，`NewPostgres` 保留 pgx 的
+`DefaultQueryExecMode` 默认值（当前使用的 pgx 版本为 `cache_statement`），且不会根据
+端口自动推断模式。Supabase 6543 应用必须显式设置 `QueryExecModeExec`；仅在稳定会话
+连接池或直连 PostgreSQL 中使用 `QueryExecModeCacheStatement` /
+`QueryExecModeCacheDescribe`；事务连接池不要使用 `QueryExecModeDescribeExec`；
+`QueryExecModeSimpleProtocol` 仅作兼容兜底，因为 `[]byte` 会编码为 `bytea`。
 通过 `InitDefault` / `Default` 实现单例模式。
 
 ```go
@@ -1353,10 +1378,12 @@ results := health.Check(c.Request.Context(), dbsqlx.HealthChecker())
 `dbsqlx.Open` 会**主动 ping 服务器并执行 `SHOW search_path`** ——
 当数据库不可达时，`InitDefault` 会立即返回非 nil 错误。
 支持可选的 `SearchPath` 以实现 schema 隔离。
-生成 DSN 时会固定加入 `default_query_exec_mode=simple_protocol`，避免 pgx 默认扩展协议
-缓存的预处理语句在 PgBouncer、Supavisor 等事务模式连接池中因后端连接切换而出现
-`prepared statement does not exist`。简单协议同样兼容会话模式连接池和直连 PostgreSQL，
-调用方无需额外配置。
+当 `Config.QueryExecMode` 为空时，生成的 DSN 不包含 `default_query_exec_mode`，从而保留
+pgx 默认值（当前使用的 pgx 版本为 `cache_statement`）。适配器不会根据端口自动推断模式。
+Supabase 6543 应用必须显式设置 `QueryExecModeExec`；仅在稳定会话连接池或直连 PostgreSQL
+中使用 `QueryExecModeCacheStatement` / `QueryExecModeCacheDescribe`；事务连接池不要使用
+`QueryExecModeDescribeExec`；
+`QueryExecModeSimpleProtocol` 仅作兼容兜底，因为 `[]byte` 会编码为 `bytea`。
 默认实例是一个进程级的 `*sqlx.DB`，通过 `dbsqlx.Default()` /
 `dbsqlx.SetDefault()` 共享。
 

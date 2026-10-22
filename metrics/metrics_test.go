@@ -53,6 +53,8 @@ func TestGetMetricsIsNotEmpty(t *testing.T) {
 func TestGetMetricsContainsExpectedKeys(t *testing.T) {
 	expectedKeys := []string{
 		"cpuPercent",
+		"cpuThrottledPercent",
+		"cpuThrottledMillis",
 		"memorySize",
 		"threads",
 		"goroutines",
@@ -60,7 +62,6 @@ func TestGetMetricsContainsExpectedKeys(t *testing.T) {
 		"numCPU",
 		"cpuRequest",
 		"cpuLimit",
-		"memoryRequest",
 		"memoryLimit",
 		"age",
 	}
@@ -221,9 +222,9 @@ func TestGetMetricsAllValuesAreNonEmpty(t *testing.T) {
 }
 
 // TestGetMetricsReturnedSliceHasExactLength verifies that the slice contains
-// exactly the 11 documented metrics.
+// exactly the 12 documented metrics.
 func TestGetMetricsReturnedSliceHasExactLength(t *testing.T) {
-	const expectedLen = 11
+	const expectedLen = 12
 	result := GetMetrics()
 	if len(result) != expectedLen {
 		t.Errorf("GetMetrics() slice length: expected %d, got %d", expectedLen, len(result))

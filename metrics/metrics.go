@@ -39,23 +39,31 @@ func GetMetrics() []NameValue {
 	pInfo := process.GetProcessInfo()
 	cpuRequest, _ := cgroup.CPURequestMilli()
 	cpuLimit, _ := cgroup.CPULimitMilli()
-	memoryRequest, _ := cgroup.MemoryRequestBytes()
 	memoryLimit, _ := cgroup.MemoryLimitBytes()
 
 	return []NameValue{
-		// cpu and memory
+		// cpu percent
 		{Name: "cpuPercent", Value: strconv.Itoa(int(pInfo.CpuPercent))},
-		{Name: "memorySize", Value: strconv.Itoa(int(pInfo.MemorySize))},
-		{Name: "threads", Value: strconv.Itoa(int(pInfo.Threads))},
-		{Name: "goroutines", Value: strconv.Itoa(int(pInfo.Goroutines))},
-		// GOMAXPROCS and NumCPU
-		{Name: "gomaxprocs", Value: strconv.Itoa(runtime.GOMAXPROCS(0))},
-		{Name: "numCPU", Value: strconv.Itoa(runtime.NumCPU())},
-		// CPU/Memory limits from cgroup (if any)
+		// CFS throttle of the latest 5 seconds: 0 = not held back by the CPU limit (always 0 without a limit)
+		{Name: "cpuThrottledPercent", Value: strconv.Itoa(int(pInfo.CpuThrottledPercent))},
+		{Name: "cpuThrottledMillis", Value: strconv.FormatInt(pInfo.CpuThrottledMillis, 10)},
+		// CPU limits from cgroup (if any)
 		{Name: "cpuRequest", Value: strconv.Itoa(cpuRequest)},
 		{Name: "cpuLimit", Value: strconv.Itoa(cpuLimit)},
-		{Name: "memoryRequest", Value: strconv.FormatInt(memoryRequest, 10)},
+
+		// memory size of the process
+		{Name: "memorySize", Value: strconv.Itoa(int(pInfo.MemorySize))},
+		// Memory limits from cgroup (if any)
+		// memoryRequest is not output: K8s does not write the memory request into the cgroup (memory.min and
+		// memory.low are 0 unless MemoryQoS is on), so the value was always 0 and looked like "no request is set".
+		// See cgroup.MemoryRequestBytes.
 		{Name: "memoryLimit", Value: strconv.FormatInt(memoryLimit, 10)},
+
+		// NumCPU, GOMAXPROCS and thread/goroutine counts
+		{Name: "numCPU", Value: strconv.Itoa(runtime.NumCPU())},
+		{Name: "threads", Value: strconv.Itoa(int(pInfo.Threads))},
+		{Name: "goroutines", Value: strconv.Itoa(int(pInfo.Goroutines))},
+		{Name: "gomaxprocs", Value: strconv.Itoa(runtime.GOMAXPROCS(0))},
 		// process age
 		{Name: "age", Value: datetime.GetAge(_startTime)},
 	}
