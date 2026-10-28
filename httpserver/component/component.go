@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 
@@ -41,11 +42,16 @@ type httpComponent struct {
 // base supplies every Config field except Port, which always comes from the
 // http.server.port env key regardless of what base.Port is set to - matching
 // every other consumer's convention of configuring the listen port via env,
-// not code.
+// not code. The optional http.server.host env key (e.g. "127.0.0.1" for
+// local-only access) overrides base.Host when set; when unset, base.Host
+// applies, and an empty Host binds all interfaces.
 func loadFromEnv(base httpserver.Config) func() httpserver.IRunner {
 	return func() httpserver.IRunner {
 		base.Port = env.Env().String("http.server.port")
-		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", base.Port))
+		if host := env.Env().String("http.server.host"); host != "" {
+			base.Host = host
+		}
+		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on %s", net.JoinHostPort(base.Host, base.Port)))
 		return httpserver.NewHttpServer(base)
 	}
 }

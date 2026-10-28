@@ -84,6 +84,20 @@ func ExampleNewHttpServer_tls() {
 	// true
 }
 
+// ExampleNewHttpServer_localOnly shows how to accept connections from this machine only.
+// Host is the address to bind: "127.0.0.1" rejects connections from other devices at the
+// operating-system level, while an empty Host (the default) binds all interfaces.
+// With httpserver/component, set the http.server.host config key instead.
+func ExampleNewHttpServer_localOnly() {
+	runner := httpserver.NewHttpServer(httpserver.Config{
+		Host: "127.0.0.1",
+		Port: "8080",
+	})
+	fmt.Println(runner != nil)
+	// Output:
+	// true
+}
+
 // ExampleNewHttpServer_customTimeouts shows how to override the default timeout values.
 // Zero-value duration fields fall back to the package defaults:
 // ReadTimeout=30s, WriteTimeout=60s, IdleTimeout=120s, ReadHeaderTimeout=10s.
