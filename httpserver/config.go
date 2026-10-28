@@ -51,6 +51,7 @@ const (
 // except WriteTimeout — see NoWriteTimeout to explicitly request no limit.
 // CrtFile and KeyFile must both be non-empty to enable TLS.
 type Config struct {
+	Host    string // Address to bind, e.g. "127.0.0.1" for local-only access; empty binds all interfaces
 	Port    string // TCP port to listen on, e.g. "8080"
 	CrtFile string // TLS certificate file path; empty disables TLS
 	KeyFile string // TLS private key file path; empty disables TLS

@@ -17,6 +17,7 @@ package httpserver
 import (
 	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 
 	"github.com/pkg/errors"
@@ -40,7 +41,7 @@ func NewHttpServer(cfg Config) IRunner {
 
 func (r *httpRunner) Start(handler http.Handler) error {
 	r.server = &http.Server{
-		Addr:    ":" + r.cfg.Port,
+		Addr:    net.JoinHostPort(r.cfg.Host, r.cfg.Port),
 		Handler: handler,
 		// Add timeouts to prevent goroutine leaks
 		ReadTimeout:       r.cfg.ReadTimeout,

@@ -29,6 +29,7 @@ package componentwithlambda
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
@@ -43,7 +44,9 @@ import (
 // supplies the VM-mode Config to use for every field except Port, which
 // always comes from the http.server.port env key regardless of what
 // base.Port is set to - matching every other VM-mode consumer's convention
-// of configuring the listen port via env, not code. Lambda mode ignores base
+// of configuring the listen port via env, not code. The optional
+// http.server.host env key (e.g. "127.0.0.1" for local-only access) overrides
+// base.Host when set; an empty Host binds all interfaces. Lambda mode ignores base
 // entirely: AWS controls that runtime's request lifecycle, not this package,
 // so there is nothing in Config (timeouts, TLS files, ...) for it to apply.
 func loadFromEnv(base httpserver.Config) func() httpserver.IRunner {
@@ -54,7 +57,10 @@ func loadFromEnv(base httpserver.Config) func() httpserver.IRunner {
 		}
 
 		base.Port = env.Env().String("http.server.port")
-		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on port %s", base.Port))
+		if host := env.Env().String("http.server.host"); host != "" {
+			base.Host = host
+		}
+		slog.Info(fmt.Sprintf("Http server is running under Virtual Machine, listen on %s", net.JoinHostPort(base.Host, base.Port)))
 		return httpserver.NewHttpServer(base)
 	}
 }

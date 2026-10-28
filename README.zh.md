@@ -739,8 +739,8 @@ PostReady(func() { discovery.Register(serviceID) })
 | `dbsqlx/mysql/component` | `db.host`、`db.port`、`db.name`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
 | `dbsqlx/postgres/component` | `db.host`、`db.port`、`db.name`、`db.schema`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
 | `dbsqlx/sqlite/component` | `db.sqlite.path` |
-| `httpserver/component` | `http.server.port` |
-| `httpserver/componentwithlambda` | `app.runmode`（`"aws_lambda"` → Lambda runner）、`http.server.port`（其他模式） |
+| `httpserver/component` | `http.server.port`、`http.server.host`（可选；如 `127.0.0.1` 表示仅本机访问，留空则监听所有网卡） |
+| `httpserver/componentwithlambda` | `app.runmode`（`"aws_lambda"` → Lambda runner）、`http.server.port`、`http.server.host`（可选；其他模式） |
 
 ---
 

@@ -745,8 +745,8 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `dbsqlx/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbsqlx/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbsqlx/sqlite/component` | `db.sqlite.path` |
-| `httpserver/component` | `http.server.port` |
-| `httpserver/componentwithlambda` | `app.runmode` (`"aws_lambda"` → Lambda runner), `http.server.port` (other modes) |
+| `httpserver/component` | `http.server.port`, `http.server.host` (optional; e.g. `127.0.0.1` for local-only access, empty binds all interfaces) |
+| `httpserver/componentwithlambda` | `app.runmode` (`"aws_lambda"` → Lambda runner), `http.server.port`, `http.server.host` (optional; other modes) |
 
 ---
 

@@ -137,6 +137,49 @@ func TestHTTPRunner_PlainHTTP_StartAndShutdown(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// httpRunner — Host restricts the bind address
+// -----------------------------------------------------------------------
+
+func TestHTTPRunner_Host_Loopback_StartAndShutdown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real HTTP server test in short mode (-short)")
+	}
+	port := freePort(t)
+	runner := httpserver.NewHttpServer(httpserver.Config{Host: "127.0.0.1", Port: port})
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Start(newTestHandler())
+	}()
+
+	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	waitUntilReachable(t, addr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runner.Shutdown(ctx); err != nil {
+		t.Errorf("Shutdown() error = %v", err)
+	}
+	select {
+	case startErr := <-errCh:
+		if startErr != nil {
+			t.Errorf("Start returned error after Shutdown: %v", startErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("Start goroutine did not return within 3 seconds of Shutdown")
+	}
+}
+
+func TestHTTPRunner_Host_NotLocalAddress_ReturnsError(t *testing.T) {
+	// 203.0.113.0/24 (TEST-NET-3) is never assigned to a local interface, so
+	// binding to it only fails if Host is really used for the listen address.
+	runner := httpserver.NewHttpServer(httpserver.Config{Host: "203.0.113.1", Port: freePort(t)})
+	if err := runner.Start(newTestHandler()); err == nil {
+		t.Error("Start with a non-local Host should return error, got nil")
+	}
+}
+
+// -----------------------------------------------------------------------
 // httpRunner — TLS with invalid cert files returns error
 // -----------------------------------------------------------------------
 
