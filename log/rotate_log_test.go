@@ -15,6 +15,7 @@
 package log
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -490,4 +491,82 @@ func TestClose_DoesNotPanic(t *testing.T) {
 	}()
 	// Close is idempotent; calling it mid-test must not panic.
 	Close()
+}
+
+// -----------------------------------------------------------------------
+// Formatted functions – must not format when the level is disabled
+// -----------------------------------------------------------------------
+
+// captureHandler records the messages that reach Handle. Its Enabled follows the level.
+type captureHandler struct {
+	level slog.Leveler
+	msgs  []string
+}
+
+func (h *captureHandler) Enabled(_ context.Context, l slog.Level) bool {
+	return l >= h.level.Level()
+}
+
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	h.msgs = append(h.msgs, r.Message)
+	return nil
+}
+
+func (h *captureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *captureHandler) WithGroup(string) slog.Handler { return h }
+
+// formatSpy counts how many times fmt formats it.
+type formatSpy struct{ calls int }
+
+func (s *formatSpy) String() string {
+	s.calls++
+	return "spy"
+}
+
+// TestFormattedFuncs_SkipFormattingWhenLevelDisabled verifies that Debugf, Infof, Warnf and Errorf
+// do not run fmt.Sprintf when their level is disabled, and that a level change at runtime takes effect.
+func TestFormattedFuncs_SkipFormattingWhenLevelDisabled(t *testing.T) {
+	saved := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(saved) })
+
+	level := &slog.LevelVar{}
+	h := &captureHandler{level: level}
+	slog.SetDefault(slog.New(h))
+
+	funcs := []struct {
+		name  string
+		fn    func(string, ...any)
+		level slog.Level
+	}{
+		{"Debugf", Debugf, slog.LevelDebug},
+		{"Infof", Infof, slog.LevelInfo},
+		{"Warnf", Warnf, slog.LevelWarn},
+		{"Errorf", Errorf, slog.LevelError},
+	}
+	configured := []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError}
+
+	for _, f := range funcs {
+		for _, cfg := range configured {
+			level.Set(cfg)
+			h.msgs = nil
+			spy := &formatSpy{}
+
+			f.fn("value %v", spy)
+
+			want := 0
+			if f.level >= cfg {
+				want = 1
+			}
+			if spy.calls != want {
+				t.Errorf("%s at level %s: formatted %d times, want %d", f.name, cfg, spy.calls, want)
+			}
+			if len(h.msgs) != want {
+				t.Errorf("%s at level %s: handled %d messages, want %d", f.name, cfg, len(h.msgs), want)
+			}
+			if want == 1 && h.msgs[0] != "value spy" {
+				t.Errorf("%s at level %s: message %q, want %q", f.name, cfg, h.msgs[0], "value spy")
+			}
+		}
+	}
 }

@@ -15,6 +15,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -225,16 +226,44 @@ func Warn(msg string) { slog.Warn(msg) }
 func Error(msg string) { slog.Error(msg) }
 
 // Debugf logs a formatted message at DEBUG level using the singleton logger.
-func Debugf(format string, args ...any) { slog.Debug(fmt.Sprintf(format, args...)) }
+// The level is checked before fmt.Sprintf, so a disabled level costs no formatting and no allocation.
+func Debugf(format string, args ...any) {
+	l := slog.Default()
+	if !l.Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+	l.Debug(fmt.Sprintf(format, args...))
+}
 
 // Infof logs a formatted message at INFO level using the singleton logger.
-func Infof(format string, args ...any) { slog.Info(fmt.Sprintf(format, args...)) }
+// The level is checked before fmt.Sprintf, so a disabled level costs no formatting and no allocation.
+func Infof(format string, args ...any) {
+	l := slog.Default()
+	if !l.Enabled(context.Background(), slog.LevelInfo) {
+		return
+	}
+	l.Info(fmt.Sprintf(format, args...))
+}
 
 // Warnf logs a formatted message at WARN level using the singleton logger.
-func Warnf(format string, args ...any) { slog.Warn(fmt.Sprintf(format, args...)) }
+// The level is checked before fmt.Sprintf, so a disabled level costs no formatting and no allocation.
+func Warnf(format string, args ...any) {
+	l := slog.Default()
+	if !l.Enabled(context.Background(), slog.LevelWarn) {
+		return
+	}
+	l.Warn(fmt.Sprintf(format, args...))
+}
 
 // Errorf logs a formatted message at ERROR level using the singleton logger.
-func Errorf(format string, args ...any) { slog.Error(fmt.Sprintf(format, args...)) }
+// The level is checked before fmt.Sprintf, so a disabled level costs no formatting and no allocation.
+func Errorf(format string, args ...any) {
+	l := slog.Default()
+	if !l.Enabled(context.Background(), slog.LevelError) {
+		return
+	}
+	l.Error(fmt.Sprintf(format, args...))
+}
 
 // DebugWith logs a message at DEBUG level with additional structured key-value fields.
 // args must be alternating key-value pairs, e.g. DebugWith("msg", "key", value).
