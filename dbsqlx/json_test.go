@@ -15,7 +15,7 @@
 package dbsqlx_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 
 	"github.com/phcp-tech/common-library-golang/dbsqlx"
