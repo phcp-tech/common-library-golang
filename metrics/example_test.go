@@ -15,7 +15,7 @@
 package metrics_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 
 	"github.com/phcp-tech/common-library-golang/metrics"
