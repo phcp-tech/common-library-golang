@@ -75,6 +75,7 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`token/component`](#bootstrap-组件包) | `.../common-library-golang/token/component` | `token`（JWT）包的 `IComponent` 适配器；若 jwt.issuer 或 jwt.access.secretcode 未设置或仍为占位符，或 jwt.refresh.secretcode 被显式声明却仍保持占位符值，则 Init 会失败 |
 | Bootstrap | [`gin/component`](#bootstrap-组件包) | `.../common-library-golang/gin/component` | `gin` 引擎的 `IComponent` 适配器 |
 | Bootstrap | [`redis/component`](#bootstrap-组件包) | `.../common-library-golang/redis/component` | `redis` 包的 `IComponent` 适配器 |
+| Bootstrap | [`storage/component`](#bootstrap-组件包) | `.../common-library-golang/storage/component` | `storage` 包的 `IComponent` 适配器 |
 | Bootstrap | [`dbgorm/clickhouse/component`](#bootstrap-组件包) | `.../common-library-golang/dbgorm/clickhouse/component` | GORM ClickHouse 连接的 `IComponent` 适配器（Init 时执行 ping） |
 | Bootstrap | [`dbgorm/mysql/component`](#bootstrap-组件包) | `.../common-library-golang/dbgorm/mysql/component` | GORM MySQL 连接的 `IComponent` 适配器（Init 时执行 ping） |
 | Bootstrap | [`dbgorm/postgres/component`](#bootstrap-组件包) | `.../common-library-golang/dbgorm/postgres/component` | GORM PostgreSQL 连接的 `IComponent` 适配器（Init 时执行 ping） |
@@ -105,6 +106,7 @@ go test ./... -cover -timeout 60s
 | 数据库 | [`dbsqlx/postgres`](#dbsqlxpostgres--sqlx-postgresql) | `.../common-library-golang/dbsqlx/postgres` | 基于 sqlx（pgx stdlib 驱动）的 PostgreSQL —— Open 时立即 ping 并执行 `SHOW search_path` |
 | 数据库 | [`dbsqlx/sqlite`](#dbsqlxsqlite--sqlx-sqlite) | `.../common-library-golang/dbsqlx/sqlite` | 基于 sqlx 的 SQLite —— 嵌入式，无需网络，Open 时自动创建文件 |
 | 数据库 | [`dbsqlx/sqlite/vfs`](#dbsqlxsqlitevfs--通过-vfs-嵌入的-sqlx-sqlite) | `.../common-library-golang/dbsqlx/sqlite/vfs` | 基于 sqlx、通过嵌入式文件系统的 SQLite —— 二进制内嵌的只读数据库 |
+| 数据库 | [`storage`](#storage--s3-兼容对象存储) | `.../common-library-golang/storage` | S3 兼容对象存储客户端（Cloudflare R2、AWS S3、MinIO、阿里云 OSS） |
 | 网络 | [`network`](#network--网络工具) | `.../common-library-golang/network` | 网络工具辅助函数 |
 | 网络 | [`auth`](#auth--casbin-rbac-鉴权) | `.../common-library-golang/auth` | 面向 Gin 的 Casbin RBAC 鉴权中间件 |
 | 网络 | [`token`](#token--jwt-认证) | `.../common-library-golang/token` | JWT 访问/刷新令牌的创建、解析及 Gin 中间件 |
@@ -727,6 +729,7 @@ PostReady(func() { discovery.Register(serviceID) })
 | `token/component` | `jwt.issuer`（必填 —— 在所有服务中必须一致；若为空或为 `"TOBE_REPLACED"` 则 Init 失败）、`jwt.access.secretcode`（必填 —— 若为空或为 `"TOBE_REPLACED"` 则 Init 失败）、`jwt.refresh.secretcode`（可选，若未设置则忽略；若被显式留为 `"TOBE_REPLACED"` 则 Init 失败） |
 | `gin/component` | `app.env.value`、`cors.allow.origins.prod`、`cors.allow.origins.dev` |
 | `redis/component` | `redis.clusters`、`redis.database`、`redis.password` |
+| `storage/component` | `storage.endpoint`、`storage.region`、`storage.access.key.id`、`storage.secret.access.key`、`storage.bucket`（必填 —— 若为空或为 `"TOBE_REPLACED"` 则 Init 失败）、`storage.path.style`、`storage.archive.bucket`、`storage.public.base.url`（可选） |
 | `dbgorm/clickhouse/component` | `db.host`、`db.port`、`db.name`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
 | `dbgorm/mysql/component` | `db.host`、`db.port`、`db.name`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
 | `dbgorm/postgres/component` | `db.host`、`db.port`、`db.name`、`db.schema`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
@@ -804,6 +807,32 @@ results := health.Check(c.Request.Context(), redis.HealthChecker())
 
 
 ---
+
+## storage — S3 兼容对象存储
+
+用一个通用的 S3 客户端（[aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2)）访问 Cloudflare R2、AWS S3、MinIO 和阿里云 OSS。更换平台只需修改 `Config`，字段名中不带平台名称。只有操作要求时才发送请求校验和（checksum），因为并非所有 S3 兼容存储都接受 SDK 默认的校验和。
+
+```go
+import "github.com/phcp-tech/common-library-golang/storage"
+
+s, err := storage.New(storage.Config{
+    Endpoint:        "https://{accountId}.r2.cloudflarestorage.com",
+    Region:          "auto",
+    AccessKeyID:     id,
+    SecretAccessKey: secret,
+    Bucket:          "zhishi-content-dev",
+    ArchiveBucket:   "zhishi-archive-dev", // 可选
+})
+if err != nil {
+    return err
+}
+if err := s.Check(ctx); err != nil { // 每个 bucket 最多列出一个对象
+    return err
+}
+out, err := s.Client().PutObject(ctx, &s3.PutObjectInput{ /* ... */ })
+```
+
+`storage/component` 读取 `storage.*` 配置键。某个键仍为 `"TOBE_REPLACED"` 时 Init 失败，错误信息中给出需要设置的环境变量。结果保存到 `storage.Default()`。它不连接存储，检查连通性请调用 `Check`。
 
 ## dbgorm/clickhouse — GORM ClickHouse
 
