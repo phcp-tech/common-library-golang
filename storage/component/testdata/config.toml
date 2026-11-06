@@ -1,0 +1,12 @@
+[app.env]
+prefix = "TEST_"
+
+[storage]
+endpoint = "http://127.0.0.1:1"
+region = "auto"
+path.style = true
+access.key.id = "id"
+secret.access.key = "secret"
+bucket = "content"
+archive.bucket = "archive"
+public.base.url = "https://content.example.com/"

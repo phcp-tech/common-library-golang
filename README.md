@@ -75,6 +75,7 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`token/component`](#bootstrap-component-packages) | `.../common-library-golang/token/component` | `IComponent` adapter for the `token` (JWT) package; fails Init if jwt.issuer or jwt.access.secretcode is unset/placeholder, or if jwt.refresh.secretcode is explicitly declared but left at its placeholder |
 | Bootstrap | [`gin/component`](#bootstrap-component-packages) | `.../common-library-golang/gin/component` | `IComponent` adapter for the `gin` engine |
 | Bootstrap | [`redis/component`](#bootstrap-component-packages) | `.../common-library-golang/redis/component` | `IComponent` adapter for the `redis` package |
+| Bootstrap | [`storage/component`](#bootstrap-component-packages) | `.../common-library-golang/storage/component` | `IComponent` adapter for the `storage` package |
 | Bootstrap | [`dbgorm/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/clickhouse/component` | `IComponent` adapter for the GORM ClickHouse connection (pings on Init) |
 | Bootstrap | [`dbgorm/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/mysql/component` | `IComponent` adapter for the GORM MySQL connection (pings on Init) |
 | Bootstrap | [`dbgorm/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/postgres/component` | `IComponent` adapter for the GORM PostgreSQL connection (pings on Init) |
@@ -105,6 +106,7 @@ go test ./... -cover -timeout 60s
 | Database | [`dbsqlx/postgres`](#dbsqlxpostgres--sqlx-postgresql) | `.../common-library-golang/dbsqlx/postgres` | PostgreSQL via sqlx (pgx stdlib driver) — eager ping + `SHOW search_path` on Open |
 | Database | [`dbsqlx/sqlite`](#dbsqlxsqlite--sqlx-sqlite) | `.../common-library-golang/dbsqlx/sqlite` | SQLite via sqlx — embedded, no network, file auto-created on Open |
 | Database | [`dbsqlx/sqlite/vfs`](#dbsqlxsqlitevfs--sqlx-embedded-sqlite-via-vfs) | `.../common-library-golang/dbsqlx/sqlite/vfs` | SQLite via sqlx over embedded FS — binary-embedded read-only databases |
+| Database | [`storage`](#storage--s3-compatible-object-storage) | `.../common-library-golang/storage` | S3-compatible object storage client (Cloudflare R2, AWS S3, MinIO, Aliyun OSS) |
 | Network | [`network`](#network--network-utilities) | `.../common-library-golang/network` | Network utilities helpers |
 | Network | [`auth`](#auth--casbin-rbac-authorisation) | `.../common-library-golang/auth` | Casbin RBAC authorisation middleware for Gin |
 | Network | [`token`](#token--jwt-authentication) | `.../common-library-golang/token` | JWT access/refresh token creation, parsing, and Gin middleware |
@@ -733,6 +735,7 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `token/component` | `jwt.issuer` (required — must be identical across every service; Init fails if empty or `"TOBE_REPLACED"`), `jwt.access.secretcode` (required — Init fails if empty or `"TOBE_REPLACED"`), `jwt.refresh.secretcode` (optional if unset; Init fails if explicitly left at `"TOBE_REPLACED"`) |
 | `gin/component` | `app.env.value`, `cors.allow.origins.prod`, `cors.allow.origins.dev` |
 | `redis/component` | `redis.clusters`, `redis.database`, `redis.password` |
+| `storage/component` | `storage.endpoint`, `storage.region`, `storage.access.key.id`, `storage.secret.access.key`, `storage.bucket` (required — Init fails if empty or `"TOBE_REPLACED"`), `storage.path.style`, `storage.archive.bucket`, `storage.public.base.url` (optional) |
 | `dbgorm/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbgorm/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbgorm/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
@@ -810,6 +813,32 @@ See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golan
 
 
 ---
+
+## storage — S3-compatible Object Storage
+
+One generic S3 client ([aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2)) for Cloudflare R2, AWS S3, MinIO and Aliyun OSS. Switching platforms only changes `Config`; no field carries a platform name. Request checksums are sent only when an operation requires them, because not every S3-compatible store accepts the SDK's default checksums.
+
+```go
+import "github.com/phcp-tech/common-library-golang/storage"
+
+s, err := storage.New(storage.Config{
+    Endpoint:        "https://{accountId}.r2.cloudflarestorage.com",
+    Region:          "auto",
+    AccessKeyID:     id,
+    SecretAccessKey: secret,
+    Bucket:          "zhishi-content-dev",
+    ArchiveBucket:   "zhishi-archive-dev", // optional
+})
+if err != nil {
+    return err
+}
+if err := s.Check(ctx); err != nil { // lists at most one object per bucket
+    return err
+}
+out, err := s.Client().PutObject(ctx, &s3.PutObjectInput{ /* ... */ })
+```
+
+`storage/component` reads the `storage.*` keys, fails Init when a key is still `"TOBE_REPLACED"` (the error names the environment variable to set), and stores the result in `storage.Default()`. It does not contact the store; call `Check` for that.
 
 ## dbgorm/clickhouse — GORM ClickHouse
 
