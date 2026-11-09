@@ -68,6 +68,7 @@ go test ./... -cover -timeout 60s
 | 基础 | [`cache`](#cache--进程内缓存-otter) | `.../common-library-golang/cache` | 由 [Otter](https://github.com/maypok86/otter) 支持的带 TTL 的进程内键值缓存 |
 | 基础 | [`cgroup`](#cgroup--linux-资源限制) | `.../common-library-golang/cgroup` | 从 cgroup v2 读取 CPU 和内存资源限制（仅限 Linux；其他平台返回 0） |
 | 基础 | [`metrics`](#metrics--运行时指标快照) | `.../common-library-golang/metrics` | 运行时与系统指标快照（CPU、内存、goroutine、cgroup 限制、运行时长） |
+| 基础 | [`file`](#file--上传策略检查) | `.../common-library-golang/file` | 上传策略检查（类型、大小上限、文件名）、安全的文件下载、二进制文件判断 |
 | Bootstrap | [`bootstrap`](#bootstrap--应用生命周期编排器) | `.../common-library-golang/bootstrap` | 顺序 Init + LIFO Close 编排器；第 1 次 `Add()` = env，第 2 次 `Add()` = log（约定） |
 | Bootstrap | [`env/component`](#bootstrap-组件包) | `.../common-library-golang/env/component` | `env` 包的 `IComponent` 适配器 |
 | Bootstrap | [`log/component`](#bootstrap-组件包) | `.../common-library-golang/log/component` | `log` 包的 `IComponent` 适配器 |
@@ -112,6 +113,7 @@ go test ./... -cover -timeout 60s
 | 网络 | [`token`](#token--jwt-认证) | `.../common-library-golang/token` | JWT 访问/刷新令牌的创建、解析及 Gin 中间件 |
 | 网络 | [`gin`](#gin--gin-引擎工厂) | `.../common-library-golang/gin` | 带 slog 请求日志和 CORS 支持的 Gin 引擎工厂 |
 | 网络 | [`gin/pprof`](#ginpprof--性能分析端点) | `.../common-library-golang/gin/pprof` | 面向 Gin 的可选 pprof 性能分析端点（需显式启用） |
+| 网络 | [`gin/download`](#gindownload--文件下载路由) | `.../common-library-golang/gin/download` | 基于 `file.ServeAttachment` 的 Gin 文件下载路由（限制在根目录内，不列出目录） |
 | 网络 | [`httpclient`](#httpclient--resty-http-客户端) | `.../common-library-golang/httpclient` | 基于 Resty 的 HTTP 客户端，支持重试、JWT 鉴权和 JSON 辅助函数 |
 | 网络 | [`httpclient/retryable`](#httpclientretryable--可重试的-http-客户端) | `.../common-library-golang/httpclient/retryable` | 封装 hashicorp/go-retryablehttp、返回标准 *http.Client 的客户端 |
 | 网络 | [`httpserver`](#httpserver--生产级-httphttps-服务器) | `.../common-library-golang/httpserver` | 具备超时控制与优雅关闭的生产级 HTTP/HTTPS 服务器 |
@@ -833,6 +835,61 @@ out, err := s.Client().PutObject(ctx, &s3.PutObjectInput{ /* ... */ })
 ```
 
 `storage/component` 读取 `storage.*` 配置键。某个键仍为 `"TOBE_REPLACED"` 时 Init 失败，错误信息中给出需要设置的环境变量。结果保存到 `storage.Default()`。它不连接存储，检查连通性请调用 `Check`。
+
+`PresignPut(ctx, key, PutOptions)` 返回一个 URL，用普通的 HTTP PUT（例如浏览器直传）把一个对象上传到主 bucket；同时返回这个 PUT 必须带的请求头（不含 Host 和 Content-Length，由浏览器自己设置）。URL 在 `PutOptions.Expires` 后失效，默认 5 分钟。上传前的检查见 [`file`](#file--上传策略检查)。
+
+## file — 上传策略检查
+
+按 `Policy` 检查一次上传：允许的 Content-Type、大小上限，以及可选的文件名。这个包不包含存储和数据库。文件存在哪里、谁能上传、object key 和上传记录都由应用决定。浏览器直传时，与 `storage.PresignPut` 一起使用。
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/file"
+    "github.com/phcp-tech/common-library-golang/storage"
+)
+
+images := file.Policy{Types: file.ImageTypes(), MaxSize: 5_000_000}
+docs := file.Policy{Types: file.DocumentTypes(), MaxSize: 20_000_000, Disposition: "attachment"}
+
+ext, err := images.Check(req.ContentType, req.Size, req.Filename) // errors wrap file.ErrInvalid
+if err != nil {
+    return err // e.g. HTTP 400
+}
+key := "images/2026/11/" + uuid.NewString() + "." + ext // never build a key from the file name
+p, err := store.PresignPut(ctx, key, storage.PutOptions{
+    ContentType:        req.ContentType,
+    Size:               req.Size,
+    CacheControl:       "public, max-age=31536000, immutable",
+    ContentDisposition: images.Disposition,
+    Metadata:           map[string]string{"uploader-id": "7"},
+})
+// the browser PUTs to p.URL and must send every header in p.Headers
+```
+
+- `ImageTypes()`：png、jpeg、webp、gif。不包括 SVG，因为 SVG 可以带脚本。
+- `DocumentTypes()`：pdf、docx、xlsx、pptx。不包括旧的二进制格式和带宏的格式。
+- 两个函数每次都返回新的 map，一个调用方不能修改另一个调用方的策略。
+- `ValidFilename` 接受空文件名，或最多 255 个字符、没有控制字符、`/` 和 `\` 的文件名。
+- 不检查文件内容。客户端可以声明错误的类型。
+
+`ServeAttachment` 把根目录下的一个文件作为下载发送。它只使用 net/http，不依赖 Gin：
+
+```go
+// in a Gin handler
+err := file.ServeAttachment(c.Writer, c.Request, dataDir, c.Query("file"))
+if errors.Is(err, file.ErrNotFound) {
+    c.JSON(http.StatusNotFound, gin.H{"message": "file not found"})
+} else if err != nil {
+    c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+}
+```
+
+- 文件名不能离开根目录：`..`、绝对路径和指向外部的符号链接都被拒绝（`os.Root`）。目录和不存在的文件返回 `ErrNotFound`，不列出目录内容。
+- `Content-Disposition: attachment` 中带文件名，非 ASCII 字符会编码。调用方设置的 `Content-Type` 保持不变。支持 Range 和 If-Modified-Since。
+- 返回错误时还没有写任何响应，调用方用自己的格式返回错误。
+
+`IsBinary(io.ReadSeeker)` 根据前 512 字节判断文件是否为二进制文件（有 NUL 字节，或者不是合法 UTF-8 且非文本字节超过 5%），读取后回到文件开头。第 512 字节截断的多字节字符不会使 UTF-8 文本被判断为二进制。
+
 
 ## dbgorm/clickhouse — GORM ClickHouse
 
@@ -1727,6 +1784,33 @@ ginpprof.Mount(router, "/api/v1") // mounts /debug/pprof/* and /api/v1/admin/ppr
 参见[完整示例](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/gin/pprof#pkg-examples)。
 
 ---
+
+## gin/download — 文件下载路由
+
+用于下载某个目录下文件的 Gin handler 和路由。检查由 [`file.ServeAttachment`](#file--上传策略检查) 完成：文件名不能离开根目录（`..`、绝对路径、指向外部的符号链接），不列出目录内容。
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/gin/download"
+    "github.com/phcp-tech/common-library-golang/token"
+)
+
+dir, err := download.ExeDir() // the executable's directory; also right for Windows services
+if err != nil {
+    return err
+}
+// GET /reqapi/v1/admin/files/download?file=./report.csv
+download.Mount(router, "/reqapi/v1", dir, token.Authenticate())
+
+// or call the handler from your own route, e.g. after setting a Content-Type
+c.Header("Content-Type", "text/csv; charset=utf-8")
+download.Handler(dir)(c)
+```
+
+- 查询参数 `file` 必须以 `./` 开头。
+- 错误为 JSON `{"code", "message"}`：没有 `./` 时 400；文件不存在、是目录或在根目录外时 404；根目录无法打开时 500。
+- `Access-Control-Expose-Headers: Content-Disposition` 使浏览器端可以读取文件名。
+- `Mount` 至少需要一个 handler（例如 `token.Authenticate()`），否则 panic，防止路由被误设为公开。
 
 ## httpclient — Resty HTTP 客户端
 

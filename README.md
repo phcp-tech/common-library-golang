@@ -68,6 +68,7 @@ go test ./... -cover -timeout 60s
 | Basic | [`cache`](#cache--in-process-cache-otter) | `.../common-library-golang/cache` | In-process key-value cache with TTL, backed by [Otter](https://github.com/maypok86/otter) |
 | Basic | [`cgroup`](#cgroup--linux-resource-limits) | `.../common-library-golang/cgroup` | Read CPU and memory resource limits from cgroup v2 (Linux only; returns 0 on other platforms) |
 | Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
+| Basic | [`file`](#file--upload-policy-checks) | `.../common-library-golang/file` | Upload policy checks (content types, size limit, file name), safe file download, binary file detection |
 | Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; 1st `Add()` = env, 2nd `Add()` = log (convention) |
 | Bootstrap | [`env/component`](#bootstrap-component-packages) | `.../common-library-golang/env/component` | `IComponent` adapter for the `env` package |
 | Bootstrap | [`log/component`](#bootstrap-component-packages) | `.../common-library-golang/log/component` | `IComponent` adapter for the `log` package |
@@ -112,6 +113,7 @@ go test ./... -cover -timeout 60s
 | Network | [`token`](#token--jwt-authentication) | `.../common-library-golang/token` | JWT access/refresh token creation, parsing, and Gin middleware |
 | Network | [`gin`](#gin--gin-engine-factory) | `.../common-library-golang/gin` | Gin engine factory with slog request logging and CORS |
 | Network | [`gin/pprof`](#ginpprof--profiling-endpoints) | `.../common-library-golang/gin/pprof` | Optional pprof profiling endpoints for Gin (explicit opt-in) |
+| Network | [`gin/download`](#gindownload--file-download-route) | `.../common-library-golang/gin/download` | Gin file download route over `file.ServeAttachment` (root-confined, no directory listing) |
 | Network | [`httpclient`](#httpclient--resty-http-client) | `.../common-library-golang/httpclient` | Resty-based HTTP client with retry, JWT auth, and JSON helpers |
 | Network | [`httpclient/retryable`](#httpclientretryable--retryable-http-client) | `.../common-library-golang/httpclient/retryable` | hashicorp/go-retryablehttp wrapper returning standard *http.Client |
 | Network | [`httpserver`](#httpserver--production-httphttps-server) | `.../common-library-golang/httpserver` | Production HTTP/HTTPS server with timeouts and graceful shutdown |
@@ -839,6 +841,61 @@ out, err := s.Client().PutObject(ctx, &s3.PutObjectInput{ /* ... */ })
 ```
 
 `storage/component` reads the `storage.*` keys, fails Init when a key is still `"TOBE_REPLACED"` (the error names the environment variable to set), and stores the result in `storage.Default()`. It does not contact the store; call `Check` for that.
+
+`PresignPut(ctx, key, PutOptions)` returns a URL that uploads one object to the main bucket with a plain HTTP PUT, e.g. straight from a browser, and the headers that PUT must send (Host and Content-Length excluded; the browser sets them). The URL expires after `PutOptions.Expires`, 5 minutes by default. See [`file`](#file--upload-policy-checks) for checking the upload first.
+
+## file — Upload Policy Checks
+
+Checks one upload against a `Policy`: the allowed content types, the size limit and the optional file name. The package has no storage and no database — where the file goes, who may upload it, the object key and the upload record stay in the application. Pair it with `storage.PresignPut` for browser uploads straight to the store.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/file"
+    "github.com/phcp-tech/common-library-golang/storage"
+)
+
+images := file.Policy{Types: file.ImageTypes(), MaxSize: 5_000_000}
+docs := file.Policy{Types: file.DocumentTypes(), MaxSize: 20_000_000, Disposition: "attachment"}
+
+ext, err := images.Check(req.ContentType, req.Size, req.Filename) // errors wrap file.ErrInvalid
+if err != nil {
+    return err // e.g. HTTP 400
+}
+key := "images/2026/11/" + uuid.NewString() + "." + ext // never build a key from the file name
+p, err := store.PresignPut(ctx, key, storage.PutOptions{
+    ContentType:        req.ContentType,
+    Size:               req.Size,
+    CacheControl:       "public, max-age=31536000, immutable",
+    ContentDisposition: images.Disposition,
+    Metadata:           map[string]string{"uploader-id": "7"},
+})
+// the browser PUTs to p.URL and must send every header in p.Headers
+```
+
+- `ImageTypes()`: png, jpeg, webp, gif. SVG is left out because it can carry scripts.
+- `DocumentTypes()`: pdf, docx, xlsx, pptx. Legacy binary formats and macro-enabled formats are left out.
+- Both return a new map on every call, so one caller cannot change another's policy.
+- `ValidFilename` accepts an empty name, or at most 255 characters without control characters, `/` or `\`.
+- The content of the file is not checked; a client can declare a wrong content type.
+
+`ServeAttachment` sends a file under a root directory as a download, with net/http only (no Gin dependency):
+
+```go
+// in a Gin handler
+err := file.ServeAttachment(c.Writer, c.Request, dataDir, c.Query("file"))
+if errors.Is(err, file.ErrNotFound) {
+    c.JSON(http.StatusNotFound, gin.H{"message": "file not found"})
+} else if err != nil {
+    c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+}
+```
+
+- The name cannot leave the root: `..`, absolute paths and symbolic links pointing outside are refused (`os.Root`). Directories and missing files are `ErrNotFound`; nothing is listed.
+- `Content-Disposition: attachment` carries the file name, encoded for non-ASCII characters. A `Content-Type` set by the caller is kept. Range and If-Modified-Since work.
+- On an error nothing has been written, so the caller answers in its own format.
+
+`IsBinary(io.ReadSeeker)` reports whether a file looks binary from its first 512 bytes (a NUL byte, or invalid UTF-8 with more than 5% non-text bytes), and leaves the reader at its start. A multi-byte character cut at the 512-byte boundary does not make UTF-8 text look binary.
+
 
 ## dbgorm/clickhouse — GORM ClickHouse
 
@@ -1743,6 +1800,33 @@ ginpprof.Mount(router, "/api/v1") // mounts /debug/pprof/* and /api/v1/admin/ppr
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/gin/pprof#pkg-examples).
 
 ---
+
+## gin/download — File Download Route
+
+Gin handler and route for downloading files under one directory. The checks are in [`file.ServeAttachment`](#file--upload-policy-checks): the name cannot leave the root (`..`, absolute paths, symbolic links pointing outside), and directories are not listed.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/gin/download"
+    "github.com/phcp-tech/common-library-golang/token"
+)
+
+dir, err := download.ExeDir() // the executable's directory; also right for Windows services
+if err != nil {
+    return err
+}
+// GET /reqapi/v1/admin/files/download?file=./report.csv
+download.Mount(router, "/reqapi/v1", dir, token.Authenticate())
+
+// or call the handler from your own route, e.g. after setting a Content-Type
+c.Header("Content-Type", "text/csv; charset=utf-8")
+download.Handler(dir)(c)
+```
+
+- The `file` query parameter must start with `./`.
+- Errors are JSON `{"code", "message"}`: 400 without `./`, 404 for a missing file, a directory or a name outside the root, 500 when the root cannot be opened.
+- `Access-Control-Expose-Headers: Content-Disposition` lets a browser client read the file name.
+- `Mount` panics without at least one handler (e.g. `token.Authenticate()`), so the route cannot become public by mistake.
 
 ## httpclient — Resty HTTP Client
 
