@@ -53,7 +53,7 @@ func loadFromEnv() error {
 		slog.Error("Create storage client failed", "error", err)
 		return err
 	}
-	slog.Info("Storage client created", "endpoint", cfg.Endpoint, "bucket", cfg.Bucket, "archiveBucket", cfg.ArchiveBucket)
+	slog.Info("Storage client created", "bucket", cfg.Bucket, "archiveBucket", cfg.ArchiveBucket)
 	return nil
 }
 
