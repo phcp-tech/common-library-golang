@@ -114,6 +114,7 @@ go test ./... -cover -timeout 60s
 | Network | [`gin`](#gin--gin-engine-factory) | `.../common-library-golang/gin` | Gin engine factory with slog request logging and CORS |
 | Network | [`gin/pprof`](#ginpprof--profiling-endpoints) | `.../common-library-golang/gin/pprof` | Optional pprof profiling endpoints for Gin (explicit opt-in) |
 | Network | [`gin/download`](#gindownload--file-download-route) | `.../common-library-golang/gin/download` | Gin file download route over `file.ServeAttachment` (root-confined, no directory listing) |
+| Network | [`cdn`](#cdn--cdn-cache-purge) | `.../common-library-golang/cdn` | CDN cache purge by URL (Cloudflare, or none) |
 | Network | [`httpclient`](#httpclient--resty-http-client) | `.../common-library-golang/httpclient` | Resty-based HTTP client with retry, JWT auth, and JSON helpers |
 | Network | [`httpclient/retryable`](#httpclientretryable--retryable-http-client) | `.../common-library-golang/httpclient/retryable` | hashicorp/go-retryablehttp wrapper returning standard *http.Client |
 | Network | [`httpserver`](#httpserver--production-httphttps-server) | `.../common-library-golang/httpserver` | Production HTTP/HTTPS server with timeouts and graceful shutdown |
@@ -896,6 +897,29 @@ if errors.Is(err, file.ErrNotFound) {
 
 `IsBinary(io.ReadSeeker)` reports whether a file looks binary from its first 512 bytes (a NUL byte, or invalid UTF-8 with more than 5% non-text bytes), and leaves the reader at its start. A multi-byte character cut at the 512-byte boundary does not make UTF-8 text look binary.
 
+
+## cdn — CDN Cache Purge
+
+Purges cached copies of URLs from a CDN, e.g. after an object in `storage` is changed or deleted. Callers use only the `Purger` interface; standard library only.
+
+```go
+import "github.com/phcp-tech/common-library-golang/cdn"
+
+p, err := cdn.New("cloudflare", zoneID, purgeToken) // or cdn.New("none", "", "")
+if err != nil {
+    return err
+}
+err = p.PurgeURLs(ctx, []string{
+    "https://example.com/articles/hello",
+    "https://content.example.com/articles/2026/11/hello/r1.md",
+})
+```
+
+- `"cloudflare"` calls `POST /zones/{zoneID}/purge_cache` with the URLs, 30 URLs per request; it tries every batch and returns all failures joined. The token needs only the Zone > Cache Purge > Purge permission.
+- `"none"` purges nothing: cached entries expire by their TTL. Use it for local runs without a token.
+- URLs must match the cached URLs exactly (scheme, host, path and query).
+- Purge by tag or by host name is not offered: they are plan features of some CDNs, with no common equivalent.
+- A purge is best effort. Log a failure and let the TTL clean up instead of failing the request that changed the data.
 
 ## dbgorm/clickhouse — GORM ClickHouse
 
