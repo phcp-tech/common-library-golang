@@ -114,6 +114,7 @@ go test ./... -cover -timeout 60s
 | 网络 | [`gin`](#gin--gin-引擎工厂) | `.../common-library-golang/gin` | 带 slog 请求日志和 CORS 支持的 Gin 引擎工厂 |
 | 网络 | [`gin/pprof`](#ginpprof--性能分析端点) | `.../common-library-golang/gin/pprof` | 面向 Gin 的可选 pprof 性能分析端点（需显式启用） |
 | 网络 | [`gin/download`](#gindownload--文件下载路由) | `.../common-library-golang/gin/download` | 基于 `file.ServeAttachment` 的 Gin 文件下载路由（限制在根目录内，不列出目录） |
+| 网络 | [`cdn`](#cdn--cdn-缓存清除) | `.../common-library-golang/cdn` | 按 URL 清除 CDN 缓存（Cloudflare，或不清除） |
 | 网络 | [`httpclient`](#httpclient--resty-http-客户端) | `.../common-library-golang/httpclient` | 基于 Resty 的 HTTP 客户端，支持重试、JWT 鉴权和 JSON 辅助函数 |
 | 网络 | [`httpclient/retryable`](#httpclientretryable--可重试的-http-客户端) | `.../common-library-golang/httpclient/retryable` | 封装 hashicorp/go-retryablehttp、返回标准 *http.Client 的客户端 |
 | 网络 | [`httpserver`](#httpserver--生产级-httphttps-服务器) | `.../common-library-golang/httpserver` | 具备超时控制与优雅关闭的生产级 HTTP/HTTPS 服务器 |
@@ -890,6 +891,29 @@ if errors.Is(err, file.ErrNotFound) {
 
 `IsBinary(io.ReadSeeker)` 根据前 512 字节判断文件是否为二进制文件（有 NUL 字节，或者不是合法 UTF-8 且非文本字节超过 5%），读取后回到文件开头。第 512 字节截断的多字节字符不会使 UTF-8 文本被判断为二进制。
 
+
+## cdn — CDN 缓存清除
+
+从 CDN 清除指定 URL 的缓存，例如修改或删除 `storage` 中的对象之后。调用方只使用 `Purger` 接口；只依赖标准库。
+
+```go
+import "github.com/phcp-tech/common-library-golang/cdn"
+
+p, err := cdn.New("cloudflare", zoneID, purgeToken) // 或 cdn.New("none", "", "")
+if err != nil {
+    return err
+}
+err = p.PurgeURLs(ctx, []string{
+    "https://example.com/articles/hello",
+    "https://content.example.com/articles/2026/11/hello/r1.md",
+})
+```
+
+- `"cloudflare"`：调用 `POST /zones/{zoneID}/purge_cache`，每次请求最多 30 个 URL。每一批都会执行，返回合并后的全部失败。token 只需要 Zone > Cache Purge > Purge 权限。
+- `"none"`：不清除，缓存按 TTL 过期。本地运行、没有 token 时使用。
+- URL 必须与缓存的 URL 完全一致，包括协议、主机名、路径和查询参数。
+- 不提供按 tag 或按主机名清除：这些是部分 CDN 的套餐功能，没有通用的对应方式。
+- 清除失败时记录日志，等待 TTL 过期，不要让修改数据的请求因此失败。
 
 ## dbgorm/clickhouse — GORM ClickHouse
 
