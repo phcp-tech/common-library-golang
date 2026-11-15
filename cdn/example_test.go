@@ -40,6 +40,20 @@ func ExampleNew() {
 	// cdn: unknown provider "cloudfront" (cloudflare|none)
 }
 
+// ExampleWithOrigins also purges the copies cached for each origin that reads
+// the URLs with fetch. Every origin must be scheme://host[:port].
+func ExampleWithOrigins() {
+	_, err := cdn.New("cloudflare", "zone-id", "token",
+		cdn.WithOrigins("https://example.com", "http://localhost:5173"))
+	fmt.Println(err)
+
+	_, err = cdn.New("cloudflare", "zone-id", "token", cdn.WithOrigins("https://example.com/"))
+	fmt.Println(err)
+	// Output:
+	// <nil>
+	// cdn: origin "https://example.com/" is not scheme://host[:port]
+}
+
 // recorder is a test Purger: callers depend on the interface only, so a unit
 // test needs no CDN.
 type recorder struct {

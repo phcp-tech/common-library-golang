@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -41,18 +42,41 @@ type noop struct{}
 
 func (noop) PurgeURLs(context.Context, []string) error { return nil }
 
-// maxURLsPerRequest is Cloudflare's limit of URLs in one purge request.
+// maxURLsPerRequest is Cloudflare's limit of files in one purge request; a
+// URL purged for one Origin counts as one file.
 const maxURLsPerRequest = 30
 
 type cloudflare struct {
 	apiBase string
 	zoneID  string
 	token   string
+	origins []string
 	client  *http.Client
 }
 
+// Option configures New.
+type Option func(*options)
+
+type options struct {
+	origins []string
+}
+
+// WithOrigins also purges, for every URL, the copies cached for each of these
+// request origins, e.g. "https://example.com". A CDN keys a cached object by
+// its Origin header too, and a purge by URL alone clears only the copy cached
+// without an Origin. Pass the origins that read the URLs cross-origin with
+// fetch: the CORS origins of the bucket. A URL loaded by <img> or by a page
+// navigation has no Origin and needs none.
+func WithOrigins(origins ...string) Option {
+	return func(o *options) { o.origins = append(o.origins, origins...) }
+}
+
 // New returns the Purger of provider: "cloudflare" or "none".
-func New(provider, zoneID, token string) (Purger, error) {
+func New(provider, zoneID, token string, opts ...Option) (Purger, error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	switch provider {
 	case "none":
 		return noop{}, nil
@@ -60,10 +84,16 @@ func New(provider, zoneID, token string) (Purger, error) {
 		if zoneID == "" || token == "" {
 			return nil, errors.New("cdn: cloudflare needs a zone id and a purge token")
 		}
+		for _, origin := range o.origins {
+			if err := checkOrigin(origin); err != nil {
+				return nil, err
+			}
+		}
 		return &cloudflare{
 			apiBase: "https://api.cloudflare.com/client/v4",
 			zoneID:  zoneID,
 			token:   token,
+			origins: o.origins,
 			client:  &http.Client{Timeout: 10 * time.Second},
 		}, nil
 	default:
@@ -71,21 +101,58 @@ func New(provider, zoneID, token string) (Purger, error) {
 	}
 }
 
+// checkOrigin accepts a browser Origin value: scheme://host[:port], nothing more.
+func checkOrigin(origin string) error {
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return fmt.Errorf("cdn: origin %q is not scheme://host[:port]", origin)
+	}
+	return nil
+}
+
+// entry is one file of the purge request: the URL, or the URL and the Origin
+// of the cached copy to clear. label names it in errors.
+type entry struct {
+	file  any
+	label string
+}
+
+// entries returns every URL once without an Origin, then once per origin.
+func (c *cloudflare) entries(urls []string) []entry {
+	out := make([]entry, 0, len(urls)*(len(c.origins)+1))
+	for _, u := range urls {
+		out = append(out, entry{file: u, label: u})
+		for _, origin := range c.origins {
+			out = append(out, entry{
+				file:  map[string]any{"url": u, "headers": map[string]string{"Origin": origin}},
+				label: u + " (Origin " + origin + ")",
+			})
+		}
+	}
+	return out
+}
+
 // PurgeURLs calls POST /zones/{zone_id}/purge_cache in batches. It tries every
 // batch and returns all failures.
 func (c *cloudflare) PurgeURLs(ctx context.Context, urls []string) error {
+	all := c.entries(urls)
 	var errs []error
-	for start := 0; start < len(urls); start += maxURLsPerRequest {
-		batch := urls[start:min(start+maxURLsPerRequest, len(urls))]
-		if err := c.purge(ctx, batch); err != nil {
+	for start := 0; start < len(all); start += maxURLsPerRequest {
+		if err := c.purge(ctx, all[start:min(start+maxURLsPerRequest, len(all))]); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (c *cloudflare) purge(ctx context.Context, urls []string) error {
-	body, _ := json.Marshal(map[string][]string{"files": urls})
+func (c *cloudflare) purge(ctx context.Context, batch []entry) error {
+	files := make([]any, len(batch))
+	urls := make([]string, len(batch))
+	for i, e := range batch {
+		files[i], urls[i] = e.file, e.label
+	}
+	body, _ := json.Marshal(map[string][]any{"files": files})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+"/zones/"+c.zoneID+"/purge_cache", bytes.NewReader(body))
 	if err != nil {
 		return err
