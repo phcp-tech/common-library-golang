@@ -34,6 +34,61 @@ func TestNew(t *testing.T) {
 	if _, err := New("cloudfront", "zone", "token"); err == nil {
 		t.Error("unknown provider: want an error")
 	}
+	for _, origin := range []string{"https://a.test", "http://localhost:5173"} {
+		if _, err := New("cloudflare", "zone", "token", WithOrigins(origin)); err != nil {
+			t.Errorf("origin %q: %v", origin, err)
+		}
+	}
+	for _, origin := range []string{"", "a.test", "ftp://a.test", "https://a.test/", "https://a.test/x", "https://a.test?q=1", "https://"} {
+		if _, err := New("cloudflare", "zone", "token", WithOrigins(origin)); err == nil {
+			t.Errorf("origin %q: want an error", origin)
+		}
+	}
+}
+
+func TestCloudflare_PurgeWithOrigins(t *testing.T) {
+	var batches []json.RawMessage
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Files json.RawMessage }
+		json.NewDecoder(r.Body).Decode(&body)
+		batches = append(batches, body.Files)
+		fmt.Fprint(w, `{"success":true}`)
+	}))
+	defer srv.Close()
+
+	p, err := New("cloudflare", "z1", "tok", WithOrigins("https://a.test", "http://localhost:5173"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.(*cloudflare).apiBase = srv.URL
+
+	if err := p.PurgeURLs(context.Background(), []string{"https://c.test/1.md", "https://c.test/2.md"}); err != nil {
+		t.Fatal(err)
+	}
+	want := `["https://c.test/1.md",` +
+		`{"headers":{"Origin":"https://a.test"},"url":"https://c.test/1.md"},` +
+		`{"headers":{"Origin":"http://localhost:5173"},"url":"https://c.test/1.md"},` +
+		`"https://c.test/2.md",` +
+		`{"headers":{"Origin":"https://a.test"},"url":"https://c.test/2.md"},` +
+		`{"headers":{"Origin":"http://localhost:5173"},"url":"https://c.test/2.md"}]`
+	if len(batches) != 1 || string(batches[0]) != want {
+		t.Fatalf("files = %s", batches)
+	}
+
+	// 3 files per URL: 11 URLs are 33 files, in batches of 30 and 3
+	batches = nil
+	urls := make([]string, 11)
+	for i := range urls {
+		urls[i] = fmt.Sprintf("https://c.test/%d.md", i)
+	}
+	if err := p.PurgeURLs(context.Background(), urls); err != nil {
+		t.Fatal(err)
+	}
+	var first, second []any
+	if len(batches) != 2 || json.Unmarshal(batches[0], &first) != nil || json.Unmarshal(batches[1], &second) != nil ||
+		len(first) != 30 || len(second) != 3 {
+		t.Fatalf("batches = %s", batches)
+	}
 }
 
 func TestCloudflare_PurgeInBatches(t *testing.T) {

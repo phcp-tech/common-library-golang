@@ -905,7 +905,8 @@ Purges cached copies of URLs from a CDN, e.g. after an object in `storage` is ch
 ```go
 import "github.com/phcp-tech/common-library-golang/cdn"
 
-p, err := cdn.New("cloudflare", zoneID, purgeToken) // or cdn.New("none", "", "")
+p, err := cdn.New("cloudflare", zoneID, purgeToken, // or cdn.New("none", "", "")
+    cdn.WithOrigins("https://example.com", "http://localhost:5173"))
 if err != nil {
     return err
 }
@@ -915,7 +916,8 @@ err = p.PurgeURLs(ctx, []string{
 })
 ```
 
-- `"cloudflare"` calls `POST /zones/{zoneID}/purge_cache` with the URLs, 30 URLs per request; it tries every batch and returns all failures joined. The token needs only the Zone > Cache Purge > Purge permission.
+- `"cloudflare"` calls `POST /zones/{zoneID}/purge_cache` with the URLs, 30 files per request; it tries every batch and returns all failures joined. The token needs only the Zone > Cache Purge > Purge permission.
+- `WithOrigins` (optional): the CDN keys a cached copy by the request `Origin` header too, and a purge by URL alone clears only the copy cached without an `Origin`. With origins, each URL is purged once without an `Origin` and once per origin, so one URL is `1 + len(origins)` files of the 30. Pass the origins that read the URLs cross-origin with `fetch` (the CORS origins of the bucket), each as `scheme://host[:port]`; `New` rejects any other form.
 - `"none"` purges nothing: cached entries expire by their TTL. Use it for local runs without a token.
 - URLs must match the cached URLs exactly (scheme, host, path and query).
 - Purge by tag or by host name is not offered: they are plan features of some CDNs, with no common equivalent.

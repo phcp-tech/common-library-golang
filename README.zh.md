@@ -899,7 +899,8 @@ if errors.Is(err, file.ErrNotFound) {
 ```go
 import "github.com/phcp-tech/common-library-golang/cdn"
 
-p, err := cdn.New("cloudflare", zoneID, purgeToken) // 或 cdn.New("none", "", "")
+p, err := cdn.New("cloudflare", zoneID, purgeToken, // 或 cdn.New("none", "", "")
+    cdn.WithOrigins("https://example.com", "http://localhost:5173"))
 if err != nil {
     return err
 }
@@ -909,7 +910,8 @@ err = p.PurgeURLs(ctx, []string{
 })
 ```
 
-- `"cloudflare"`：调用 `POST /zones/{zoneID}/purge_cache`，每次请求最多 30 个 URL。每一批都会执行，返回合并后的全部失败。token 只需要 Zone > Cache Purge > Purge 权限。
+- `"cloudflare"`：调用 `POST /zones/{zoneID}/purge_cache`，每次请求最多 30 个文件。每一批都会执行，返回合并后的全部失败。token 只需要 Zone > Cache Purge > Purge 权限。
+- `WithOrigins`（可选）：CDN 的缓存键也包含请求头 `Origin`，只按 URL 清除只会清掉不带 `Origin` 的副本。设置后，每个 URL 清除一次不带 `Origin` 的副本，再对每个来源各清除一次，所以一个 URL 占 30 个文件中的 `1 + len(origins)` 个。传入用 `fetch` 跨域读取这些 URL 的来源（即 bucket 的 CORS 来源），格式为 `scheme://host[:port]`，其他格式 `New` 返回错误。
 - `"none"`：不清除，缓存按 TTL 过期。本地运行、没有 token 时使用。
 - URL 必须与缓存的 URL 完全一致，包括协议、主机名、路径和查询参数。
 - 不提供按 tag 或按主机名清除：这些是部分 CDN 的套餐功能，没有通用的对应方式。
