@@ -69,6 +69,7 @@ go test ./... -cover -timeout 60s
 | Basic | [`cgroup`](#cgroup--linux-resource-limits) | `.../common-library-golang/cgroup` | Read CPU and memory resource limits from cgroup v2 (Linux only; returns 0 on other platforms) |
 | Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
 | Basic | [`file`](#file--upload-policy-checks) | `.../common-library-golang/file` | Upload policy checks (content types, size limit, file name), safe file download, binary file detection |
+| Basic | [`encrypt`](#encrypt--password-hashing) | `.../common-library-golang/encrypt` | PBKDF2-HMAC-SHA256 password hashing |
 | Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; 1st `Add()` = env, 2nd `Add()` = log (convention) |
 | Bootstrap | [`env/component`](#bootstrap-component-packages) | `.../common-library-golang/env/component` | `IComponent` adapter for the `env` package |
 | Bootstrap | [`log/component`](#bootstrap-component-packages) | `.../common-library-golang/log/component` | `IComponent` adapter for the `log` package |
@@ -1769,6 +1770,26 @@ bootstrap `Init()` time, so the two layers of defense never disagree on what cou
 as "configured".
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/token#pkg-examples).
+
+---
+
+## encrypt — Password Hashing
+
+`EncryptPassword(password, salt)` hashes a password with PBKDF2-HMAC-SHA256
+(4096 iterations, 32-byte key) and returns it as standard base64 (44 characters).
+It is a one-way hash: the password cannot be recovered from it.
+
+```go
+import "github.com/phcp-tech/common-library-golang/encrypt"
+
+// Hash a password with a per-user salt. Store the salt next to the hash.
+hash := encrypt.EncryptPassword(password, salt)
+
+// Check a login: hash the entered password with the stored salt and compare.
+ok := encrypt.EncryptPassword(entered, salt) == hash
+```
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/encrypt#pkg-examples).
 
 ---
 

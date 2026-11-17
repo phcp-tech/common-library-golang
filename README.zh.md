@@ -69,6 +69,7 @@ go test ./... -cover -timeout 60s
 | 基础 | [`cgroup`](#cgroup--linux-资源限制) | `.../common-library-golang/cgroup` | 从 cgroup v2 读取 CPU 和内存资源限制（仅限 Linux；其他平台返回 0） |
 | 基础 | [`metrics`](#metrics--运行时指标快照) | `.../common-library-golang/metrics` | 运行时与系统指标快照（CPU、内存、goroutine、cgroup 限制、运行时长） |
 | 基础 | [`file`](#file--上传策略检查) | `.../common-library-golang/file` | 上传策略检查（类型、大小上限、文件名）、安全的文件下载、二进制文件判断 |
+| 基础 | [`encrypt`](#encrypt--密码哈希) | `.../common-library-golang/encrypt` | PBKDF2-HMAC-SHA256 密码哈希 |
 | Bootstrap | [`bootstrap`](#bootstrap--应用生命周期编排器) | `.../common-library-golang/bootstrap` | 顺序 Init + LIFO Close 编排器；第 1 次 `Add()` = env，第 2 次 `Add()` = log（约定） |
 | Bootstrap | [`env/component`](#bootstrap-组件包) | `.../common-library-golang/env/component` | `env` 包的 `IComponent` 适配器 |
 | Bootstrap | [`log/component`](#bootstrap-组件包) | `.../common-library-golang/log/component` | `log` 包的 `IComponent` 适配器 |
@@ -1753,6 +1754,24 @@ refreshSecret 保持零值 `""`），还是调用时传入了 `token.Placeholder
 同一个函数来校验配置，因此这两层防护对"何为已配置"的判定永远不会不一致。
 
 参见[完整示例](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/token#pkg-examples)。
+
+---
+
+## encrypt — 密码哈希
+
+`EncryptPassword(password, salt)` 用 PBKDF2-HMAC-SHA256（迭代 4096 次，密钥 32 字节）计算密码哈希，结果为标准 base64（44 个字符）。这是单向哈希，不能从结果还原密码。
+
+```go
+import "github.com/phcp-tech/common-library-golang/encrypt"
+
+// Hash a password with a per-user salt. Store the salt next to the hash.
+hash := encrypt.EncryptPassword(password, salt)
+
+// Check a login: hash the entered password with the stored salt and compare.
+ok := encrypt.EncryptPassword(entered, salt) == hash
+```
+
+参见[完整示例](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/encrypt#pkg-examples)。
 
 ---
 
