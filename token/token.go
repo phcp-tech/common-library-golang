@@ -24,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/phcp-tech/common-library-golang/dto"
+	"github.com/phcp-tech/common-library-golang/env"
 	"github.com/pkg/errors"
 )
 
@@ -45,7 +46,7 @@ const (
 // at all. token/component checks against this same constant so the two
 // layers of defense (fail at bootstrap Init vs. fail on first call) never
 // drift out of sync on what counts as "not really configured".
-const PlaceholderSecret = "TOBE_REPLACED"
+const PlaceholderSecret = env.Placeholder
 
 var (
 	issuer        string

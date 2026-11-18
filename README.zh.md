@@ -70,6 +70,7 @@ go test ./... -cover -timeout 60s
 | 基础 | [`metrics`](#metrics--运行时指标快照) | `.../common-library-golang/metrics` | 运行时与系统指标快照（CPU、内存、goroutine、cgroup 限制、运行时长） |
 | 基础 | [`file`](#file--上传策略检查) | `.../common-library-golang/file` | 上传策略检查（类型、大小上限、文件名）、安全的文件下载、二进制文件判断 |
 | 基础 | [`encrypt`](#encrypt--密码哈希) | `.../common-library-golang/encrypt` | PBKDF2-HMAC-SHA256 密码哈希 |
+| 基础 | [`email`](#email--邮件发送) | `.../common-library-golang/email` | 通过 SMTP 发送邮件（go-mail），检查邮件地址格式 |
 | Bootstrap | [`bootstrap`](#bootstrap--应用生命周期编排器) | `.../common-library-golang/bootstrap` | 顺序 Init + LIFO Close 编排器；第 1 次 `Add()` = env，第 2 次 `Add()` = log（约定） |
 | Bootstrap | [`env/component`](#bootstrap-组件包) | `.../common-library-golang/env/component` | `env` 包的 `IComponent` 适配器 |
 | Bootstrap | [`log/component`](#bootstrap-组件包) | `.../common-library-golang/log/component` | `log` 包的 `IComponent` 适配器 |
@@ -78,6 +79,7 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`gin/component`](#bootstrap-组件包) | `.../common-library-golang/gin/component` | `gin` 引擎的 `IComponent` 适配器 |
 | Bootstrap | [`redis/component`](#bootstrap-组件包) | `.../common-library-golang/redis/component` | `redis` 包的 `IComponent` 适配器 |
 | Bootstrap | [`storage/component`](#bootstrap-组件包) | `.../common-library-golang/storage/component` | `storage` 包的 `IComponent` 适配器 |
+| Bootstrap | [`email/component`](#bootstrap-组件包) | `.../common-library-golang/email/component` | `email` 包的 `IComponent` 适配器；`[email]` 配置缺失或无效时 Init 失败 |
 | Bootstrap | [`dbgorm/clickhouse/component`](#bootstrap-组件包) | `.../common-library-golang/dbgorm/clickhouse/component` | GORM ClickHouse 连接的 `IComponent` 适配器（Init 时执行 ping） |
 | Bootstrap | [`dbgorm/mysql/component`](#bootstrap-组件包) | `.../common-library-golang/dbgorm/mysql/component` | GORM MySQL 连接的 `IComponent` 适配器（Init 时执行 ping） |
 | Bootstrap | [`dbgorm/postgres/component`](#bootstrap-组件包) | `.../common-library-golang/dbgorm/postgres/component` | GORM PostgreSQL 连接的 `IComponent` 适配器（Init 时执行 ping） |
@@ -149,6 +151,25 @@ var configFS embed.FS
 
 env.InitEnv("config.toml", &configFS)
 ```
+
+**占位符。** 在 `app.toml` 中，部署时才设置真实值的配置项，值写 `env.Placeholder`（`"TOBE_REPLACED"`）。合并环境变量之后，只要还有配置项或列表元素是这个值，`InitEnv` 就返回错误。错误信息列出每一个这样的配置项和设置它的环境变量（`app.env.prefix` + 大写的配置项名，`.` 换成 `_`）：
+
+```
+config keys still set to TOBE_REPLACED, set them with environment variables:
+db.password (TM_DB_PASSWORD), email.host (TM_EMAIL_HOST)
+```
+
+占位符只用于必填的配置项。可选的配置项，或只在某些配置下才用到的配置项（例如没有选用的存储类型的配置），写 `""`，在使用的地方检查：
+
+```go
+// Fails with all missing keys at once, each with its environment variable.
+if err := env.RequireStrings("email.host", "email.port"); err != nil {
+    return err
+}
+name := env.VarName("email.host") // "TM_EMAIL_HOST"
+```
+
+`RequireStrings` 拒绝空值和占位符。格式检查（例如端口号、邮件地址）仍由读取这个配置项的组件负责。
 
 参见[完整示例](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/env#pkg-examples)。
 
@@ -734,6 +755,7 @@ PostReady(func() { discovery.Register(serviceID) })
 | `gin/component` | `app.env.value`、`cors.allow.origins.prod`、`cors.allow.origins.dev` |
 | `redis/component` | `redis.clusters`、`redis.database`、`redis.password` |
 | `storage/component` | `storage.endpoint`、`storage.region`、`storage.access.key.id`、`storage.secret.access.key`、`storage.bucket`（必填 —— 若为空或为 `"TOBE_REPLACED"` 则 Init 失败）、`storage.path.style`、`storage.archive.bucket`、`storage.public.base.url`（可选） |
+| `email/component` | `email.host`、`email.port`、`email.username`、`email.password`、`email.from.address`（必填 —— 为空或无效时 Init 失败）、`email.from.name`（可选） |
 | `dbgorm/clickhouse/component` | `db.host`、`db.port`、`db.name`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
 | `dbgorm/mysql/component` | `db.host`、`db.port`、`db.name`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
 | `dbgorm/postgres/component` | `db.host`、`db.port`、`db.name`、`db.schema`、`db.username`、`db.password`、`db.max.open.conns`、`db.max.idle.conns`、`db.conn.max.lifetime`、`db.conn.max.idletime` |
@@ -836,7 +858,7 @@ if err := s.Check(ctx); err != nil { // 每个 bucket 最多列出一个对象
 out, err := s.Client().PutObject(ctx, &s3.PutObjectInput{ /* ... */ })
 ```
 
-`storage/component` 读取 `storage.*` 配置键。某个键仍为 `"TOBE_REPLACED"` 时 Init 失败，错误信息中给出需要设置的环境变量。结果保存到 `storage.Default()`。它不连接存储，检查连通性请调用 `Check`。
+`storage/component` 读取 `storage.*` 配置键。必填的键为空时 Init 失败，错误信息中给出需要设置的环境变量（`env.InitEnv` 已经拒绝 `"TOBE_REPLACED"`）。结果保存到 `storage.Default()`。它不连接存储，检查连通性请调用 `Check`。
 
 `PresignPut(ctx, key, PutOptions)` 返回一个 URL，用普通的 HTTP PUT（例如浏览器直传）把一个对象上传到主 bucket；同时返回这个 PUT 必须带的请求头（不含 Host 和 Content-Length，由浏览器自己设置）。URL 在 `PutOptions.Expires` 后失效，默认 5 分钟。上传前的检查见 [`file`](#file--上传策略检查)。
 
@@ -892,6 +914,48 @@ if errors.Is(err, file.ErrNotFound) {
 
 `IsBinary(io.ReadSeeker)` 根据前 512 字节判断文件是否为二进制文件（有 NUL 字节，或者不是合法 UTF-8 且非文本字节超过 5%），读取后回到文件开头。第 512 字节截断的多字节字符不会使 UTF-8 文本被判断为二进制。
 
+## email — 邮件发送
+
+用 [go-mail](https://github.com/wneessen/go-mail) 通过 SMTP 发送邮件，并检查地址格式（`IsEmail`）。代码应依赖接口 `email.Sender`，测试中可以换成假的实现。
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/email"
+    emailComp "github.com/phcp-tech/common-library-golang/email/component"
+)
+
+// Register after env and log; Init reads [email] and fails on a bad config.
+bootstrap.New().
+    Add(envComp.Component("config/app.toml", &configFS)).
+    Add(logComp.Component()).
+    Add(emailComp.Component()).
+    // ...
+    Run()
+
+// No From: the default sender (email.from.address / email.from.name) is used.
+err := email.Default().Send(&email.Message{
+    To:      []string{"user@example.com"},
+    Subject: "Verification code",
+    Body:    "<p>Your code is 123456.</p>",
+})
+
+// Without bootstrap, or for a second server:
+s, err := email.NewSMTPSender(email.Config{Host: "smtp.example.com", Port: 587,
+    Username: "user", Password: "secret", FromAddress: "noreply@example.com"})
+
+ok := email.IsEmail("user@example.com") // address syntax check
+```
+
+- **按端口选择 TLS。** 465 端口用隐式 TLS。其他端口（587、25）必须支持 STARTTLS；服务器不支持时返回错误，所以密码不会以明文发送。
+- **认证方式**按服务器支持的方式选择：SCRAM、CRAM-MD5、PLAIN、LOGIN（PLAIN 和 LOGIN 只在 TLS 连接上使用）。
+- **超时。** 连接 15 秒，一次 `Send` 30 秒。每次 `Send` 新建一个连接，所以一个 sender 可以并发使用。
+- **邮件内容。** `ContentType` 不是 `text/plain` 时，`Body` 按 `text/html` 发送；邮件用 UTF-8 和 quoted-printable 编码。`Bcc` 不写进邮件。没有 `User-Agent`/`X-Mailer` 头。不支持附件。连接之前先解析每个地址。
+
+`email/component` 读取 `email.host`、`email.port`、`email.username`、`email.password`、`email.from.address`（必填）和 `email.from.name`（可选）。缺少配置值、端口不是 1～65535 的数字，或 `email.from.address` 不是合法地址时，Init 失败。
+
+参见[完整示例](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/email#pkg-examples)。
+
+---
 
 ## cdn — CDN 缓存清除
 

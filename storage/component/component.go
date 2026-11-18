@@ -16,7 +16,6 @@
 package component
 
 import (
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -24,10 +23,6 @@ import (
 	"github.com/phcp-tech/common-library-golang/env"
 	"github.com/phcp-tech/common-library-golang/storage"
 )
-
-// placeholder is the value config/app.toml files use for settings that must
-// come from environment variables.
-const placeholder = "TOBE_REPLACED"
 
 // loadFromEnv reads the storage settings from the koanf env singleton and
 // initialises the package-level default Store. Configuration keys:
@@ -41,8 +36,9 @@ const placeholder = "TOBE_REPLACED"
 //	storage.archive.bucket    — optional second bucket
 //	storage.public.base.url   — optional public URL prefix of storage.bucket
 //
-// A key left at "TOBE_REPLACED" fails Init with the name of the environment
-// variable that has to be set, so credentials are never read from the file.
+// A required key that is empty fails Init with the name of the environment
+// variable that has to be set (env.RequireStrings). env.InitEnv already rejects
+// keys left at "TOBE_REPLACED", so credentials are never read from the file.
 func loadFromEnv() error {
 	cfg, err := configFromEnv()
 	if err != nil {
@@ -58,14 +54,11 @@ func loadFromEnv() error {
 }
 
 func configFromEnv() (storage.Config, error) {
-	k := env.Env()
-	str := func(key string) (string, error) {
-		v := k.String(key)
-		if v == placeholder {
-			return "", fmt.Errorf("%s is not set (environment variable %s)", key, envName(key))
-		}
-		return v, nil
+	if err := env.RequireStrings("storage.endpoint", "storage.region", "storage.access.key.id",
+		"storage.secret.access.key", "storage.bucket"); err != nil {
+		return storage.Config{}, err
 	}
+	k := env.Env()
 	cfg := storage.Config{UsePathStyle: k.Bool("storage.path.style")}
 	for _, f := range []struct {
 		key string
@@ -79,20 +72,10 @@ func configFromEnv() (storage.Config, error) {
 		{"storage.archive.bucket", &cfg.ArchiveBucket},
 		{"storage.public.base.url", &cfg.PublicBaseURL},
 	} {
-		v, err := str(f.key)
-		if err != nil {
-			return cfg, err
-		}
-		*f.dst = v
+		*f.dst = k.String(f.key)
 	}
 	cfg.PublicBaseURL = strings.TrimRight(cfg.PublicBaseURL, "/")
 	return cfg, nil
-}
-
-// envName maps a config key to its environment variable using app.env.prefix,
-// e.g. storage.access.key.id -> TM_STORAGE_ACCESS_KEY_ID.
-func envName(key string) string {
-	return env.Env().String("app.env.prefix") + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
 }
 
 // Component wraps loadFromEnv as a bootstrap.IComponent. Close is a no-op:
