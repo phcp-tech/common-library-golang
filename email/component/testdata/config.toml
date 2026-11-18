@@ -1,0 +1,10 @@
+[app.env]
+prefix = "TEST_"
+
+[email]
+host = "smtp.example.test"
+port = "587"
+username = "user"
+password = "secret"
+from.address = "noreply@example.test"
+from.name = "Toolmaker"

@@ -70,6 +70,7 @@ go test ./... -cover -timeout 60s
 | Basic | [`metrics`](#metrics--runtime-metrics-snapshot) | `.../common-library-golang/metrics` | Runtime and system metrics snapshot (CPU, memory, goroutines, cgroup limits, uptime) |
 | Basic | [`file`](#file--upload-policy-checks) | `.../common-library-golang/file` | Upload policy checks (content types, size limit, file name), safe file download, binary file detection |
 | Basic | [`encrypt`](#encrypt--password-hashing) | `.../common-library-golang/encrypt` | PBKDF2-HMAC-SHA256 password hashing |
+| Basic | [`email`](#email--email-sending) | `.../common-library-golang/email` | SMTP email sending (go-mail) and email address check |
 | Bootstrap | [`bootstrap`](#bootstrap--application-lifecycle-orchestrator) | `.../common-library-golang/bootstrap` | Sequential Init + LIFO Close orchestrator; 1st `Add()` = env, 2nd `Add()` = log (convention) |
 | Bootstrap | [`env/component`](#bootstrap-component-packages) | `.../common-library-golang/env/component` | `IComponent` adapter for the `env` package |
 | Bootstrap | [`log/component`](#bootstrap-component-packages) | `.../common-library-golang/log/component` | `IComponent` adapter for the `log` package |
@@ -78,6 +79,7 @@ go test ./... -cover -timeout 60s
 | Bootstrap | [`gin/component`](#bootstrap-component-packages) | `.../common-library-golang/gin/component` | `IComponent` adapter for the `gin` engine |
 | Bootstrap | [`redis/component`](#bootstrap-component-packages) | `.../common-library-golang/redis/component` | `IComponent` adapter for the `redis` package |
 | Bootstrap | [`storage/component`](#bootstrap-component-packages) | `.../common-library-golang/storage/component` | `IComponent` adapter for the `storage` package |
+| Bootstrap | [`email/component`](#bootstrap-component-packages) | `.../common-library-golang/email/component` | `IComponent` adapter for the `email` package; fails Init on a missing or invalid `[email]` setting |
 | Bootstrap | [`dbgorm/clickhouse/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/clickhouse/component` | `IComponent` adapter for the GORM ClickHouse connection (pings on Init) |
 | Bootstrap | [`dbgorm/mysql/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/mysql/component` | `IComponent` adapter for the GORM MySQL connection (pings on Init) |
 | Bootstrap | [`dbgorm/postgres/component`](#bootstrap-component-packages) | `.../common-library-golang/dbgorm/postgres/component` | `IComponent` adapter for the GORM PostgreSQL connection (pings on Init) |
@@ -149,6 +151,32 @@ var configFS embed.FS
 
 env.InitEnv("config.toml", &configFS)
 ```
+
+**Placeholders.** In `app.toml`, a setting whose real value is set at deployment
+has the value `env.Placeholder` (`"TOBE_REPLACED"`). After the environment
+variables are merged, `InitEnv` fails while any setting, or any list element,
+still has this value. The error names every such key with the environment
+variable that sets it (`app.env.prefix` + key in upper case, `.` → `_`):
+
+```
+config keys still set to TOBE_REPLACED, set them with environment variables:
+db.password (TM_DB_PASSWORD), email.host (TM_EMAIL_HOST)
+```
+
+Use the placeholder only for required settings. For an optional setting, or one
+used only by some configurations (for example the keys of a storage type that is
+not selected), write `""` and check it where it is used:
+
+```go
+// Fails with all missing keys at once, each with its environment variable.
+if err := env.RequireStrings("email.host", "email.port"); err != nil {
+    return err
+}
+name := env.VarName("email.host") // "TM_EMAIL_HOST"
+```
+
+`RequireStrings` rejects empty values and the placeholder. Format checks (a port
+number, an email address) stay in the component that reads the setting.
 
 See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/env#pkg-examples).
 
@@ -740,6 +768,7 @@ Each base package ships a companion `component/` sub-package that adapts it to t
 | `gin/component` | `app.env.value`, `cors.allow.origins.prod`, `cors.allow.origins.dev` |
 | `redis/component` | `redis.clusters`, `redis.database`, `redis.password` |
 | `storage/component` | `storage.endpoint`, `storage.region`, `storage.access.key.id`, `storage.secret.access.key`, `storage.bucket` (required — Init fails if empty or `"TOBE_REPLACED"`), `storage.path.style`, `storage.archive.bucket`, `storage.public.base.url` (optional) |
+| `email/component` | `email.host`, `email.port`, `email.username`, `email.password`, `email.from.address` (required — Init fails if empty or invalid), `email.from.name` (optional) |
 | `dbgorm/clickhouse/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbgorm/mysql/component` | `db.host`, `db.port`, `db.name`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
 | `dbgorm/postgres/component` | `db.host`, `db.port`, `db.name`, `db.schema`, `db.username`, `db.password`, `db.max.open.conns`, `db.max.idle.conns`, `db.conn.max.lifetime`, `db.conn.max.idletime` |
@@ -842,7 +871,7 @@ if err := s.Check(ctx); err != nil { // lists at most one object per bucket
 out, err := s.Client().PutObject(ctx, &s3.PutObjectInput{ /* ... */ })
 ```
 
-`storage/component` reads the `storage.*` keys, fails Init when a key is still `"TOBE_REPLACED"` (the error names the environment variable to set), and stores the result in `storage.Default()`. It does not contact the store; call `Check` for that.
+`storage/component` reads the `storage.*` keys, fails Init when a required key is empty (the error names the environment variable to set; `env.InitEnv` already rejects `"TOBE_REPLACED"`), and stores the result in `storage.Default()`. It does not contact the store; call `Check` for that.
 
 `PresignPut(ctx, key, PutOptions)` returns a URL that uploads one object to the main bucket with a plain HTTP PUT, e.g. straight from a browser, and the headers that PUT must send (Host and Content-Length excluded; the browser sets them). The URL expires after `PutOptions.Expires`, 5 minutes by default. See [`file`](#file--upload-policy-checks) for checking the upload first.
 
@@ -898,6 +927,58 @@ if errors.Is(err, file.ErrNotFound) {
 
 `IsBinary(io.ReadSeeker)` reports whether a file looks binary from its first 512 bytes (a NUL byte, or invalid UTF-8 with more than 5% non-text bytes), and leaves the reader at its start. A multi-byte character cut at the 512-byte boundary does not make UTF-8 text look binary.
 
+## email — Email Sending
+
+Sends email over SMTP with [go-mail](https://github.com/wneessen/go-mail), and checks
+address syntax (`IsEmail`). `email.Sender` is the interface to depend on; replace it
+with a fake in tests.
+
+```go
+import (
+    "github.com/phcp-tech/common-library-golang/email"
+    emailComp "github.com/phcp-tech/common-library-golang/email/component"
+)
+
+// Register after env and log; Init reads [email] and fails on a bad config.
+bootstrap.New().
+    Add(envComp.Component("config/app.toml", &configFS)).
+    Add(logComp.Component()).
+    Add(emailComp.Component()).
+    // ...
+    Run()
+
+// No From: the default sender (email.from.address / email.from.name) is used.
+err := email.Default().Send(&email.Message{
+    To:      []string{"user@example.com"},
+    Subject: "Verification code",
+    Body:    "<p>Your code is 123456.</p>",
+})
+
+// Without bootstrap, or for a second server:
+s, err := email.NewSMTPSender(email.Config{Host: "smtp.example.com", Port: 587,
+    Username: "user", Password: "secret", FromAddress: "noreply@example.com"})
+
+ok := email.IsEmail("user@example.com") // address syntax check
+```
+
+- **TLS by port.** Port 465 uses implicit TLS. Any other port (587, 25) must offer
+  STARTTLS; a server without it is an error, so the password is never sent unencrypted.
+- **Auth** is chosen from what the server offers: SCRAM, CRAM-MD5, PLAIN, LOGIN
+  (PLAIN and LOGIN only over TLS).
+- **Timeouts.** 15 s to connect, 30 s for one `Send`. Each `Send` opens its own
+  connection, so a sender is safe for concurrent use.
+- **Message.** `Body` is `text/html` unless `ContentType` is `text/plain`; the message is
+  UTF-8, quoted-printable. `Bcc` is not written into the message. There is no
+  `User-Agent`/`X-Mailer` header. Attachments are not supported. Every address is
+  parsed before connecting.
+
+`email/component` reads `email.host`, `email.port`, `email.username`, `email.password`,
+`email.from.address` (required) and `email.from.name` (optional). A missing value, a
+port that is not a number in 1–65535, or an invalid `email.from.address` fails Init.
+
+See [full examples](https://pkg.go.dev/github.com/phcp-tech/common-library-golang/email#pkg-examples).
+
+---
 
 ## cdn — CDN Cache Purge
 

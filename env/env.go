@@ -16,7 +16,9 @@ package env
 
 import (
 	"embed"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -77,7 +79,89 @@ func InitEnv(configFile string, configFS ...*embed.FS) error {
 		//fmt.Println("\nMerged environment variables:")
 		//k.Print()
 
+		// A setting still at the placeholder was never given its real value.
+		if keys := placeholderKeys(k); len(keys) > 0 {
+			err = fmt.Errorf("config keys still set to %s, set them with environment variables: %s",
+				Placeholder, describeKeys(prefix, keys))
+			return
+		}
+
 		instance = k
 	})
 	return err
+}
+
+// Placeholder is the value config/app.toml files use for settings whose real
+// value is set at deployment, usually with an environment variable. InitEnv
+// fails while any setting still has this value. For an optional setting, or one
+// used only by some configurations, use "" in app.toml instead and check it
+// where it is used, for example with RequireStrings.
+const Placeholder = "TOBE_REPLACED"
+
+// placeholderKeys returns the sorted keys whose value, or one of whose list
+// elements, is Placeholder.
+func placeholderKeys(k *koanf.Koanf) []string {
+	var keys []string
+	for key, v := range k.All() {
+		if isPlaceholder(v) {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func isPlaceholder(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t) == Placeholder
+	case []any:
+		return slices.ContainsFunc(t, isPlaceholder)
+	case []string:
+		return slices.ContainsFunc(t, func(s string) bool { return strings.TrimSpace(s) == Placeholder })
+	}
+	return false
+}
+
+// VarName returns the environment variable that sets key: app.env.prefix plus
+// the key in upper case with "." replaced by "_", e.g. email.host -> TM_EMAIL_HOST.
+func VarName(key string) string {
+	prefix := ""
+	if instance != nil {
+		prefix = instance.String("app.env.prefix")
+	}
+	return varName(prefix, key)
+}
+
+func varName(prefix, key string) string {
+	return prefix + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+}
+
+func describeKeys(prefix string, keys []string) string {
+	parts := make([]string, len(keys))
+	for i, key := range keys {
+		parts[i] = fmt.Sprintf("%s (%s)", key, varName(prefix, key))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// RequireStrings checks that every key has a non-empty value that is not
+// Placeholder. It reports all missing keys at once, each with the environment
+// variable that sets it. Use it in a component's Init for the settings that
+// component needs; InitEnv already rejects placeholders, but not empty values.
+func RequireStrings(keys ...string) error {
+	if instance == nil {
+		return errors.New("env: config is not loaded, call InitEnv first")
+	}
+	var missing []string
+	for _, key := range keys {
+		v := strings.TrimSpace(instance.String(key))
+		if v == "" || v == Placeholder {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("config keys must be set: %s", describeKeys(instance.String("app.env.prefix"), missing))
+	}
+	return nil
 }
