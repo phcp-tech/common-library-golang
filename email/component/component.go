@@ -47,7 +47,7 @@ func loadFromEnv() error {
 		slog.Error("Create email sender failed", "error", err)
 		return err
 	}
-	slog.Info("Email sender created", "host", cfg.Host, "port", cfg.Port, "from", cfg.FromAddress)
+	slog.Info("Email sender created", "from", cfg.FromAddress, "fromName", cfg.FromName)
 	return nil
 }
 
