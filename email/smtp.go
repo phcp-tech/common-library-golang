@@ -119,7 +119,7 @@ func (s *SMTPSender) Send(msg *Message) error {
 		slog.Error("Send email failed", "to", msg.To[0], "server", fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port), "error", err)
 		return fmt.Errorf("send email: %w", err)
 	}
-	slog.Info("Email sent", "to", msg.To[0])
+	slog.Info("Email sent successfully", "to", msg.To[0])
 	return nil
 }
 
